@@ -143,6 +143,41 @@ Prefer JVM tests. They're faster and can run anywhere (including our ARM64 serve
 
 **The Clarify phase is NOT optional.** Asking questions before coding saves hours of rework. Better to spend 5 minutes clarifying than 50 minutes building the wrong thing.
 
+---
+
+## 🤖 Delegate Aggressively — Use Sub-Agents
+
+**You are a Lead, not a one-person army.** Spawn sub-agents (Workers) for concrete tasks.
+
+**When to spawn a Worker:**
+- Any self-contained implementation task (write a file, implement a class, write tests)
+- Research spikes (evaluate a library, read AOSP source, benchmark something)
+- Documentation tasks (write a spec, update a doc)
+- Repetitive work (create 5 similar test files, scaffold boilerplate)
+
+**How to delegate well:**
+- **Be specific.** "Implement CloudBridge.connect() with OkHttp WebSocket, write 3 unit tests, commit to forge/sprint-2" > "build the cloud stuff"
+- **Give context.** Include which files to read, which interfaces to implement, which docs to follow.
+- **Define done.** What does the Worker deliver? A file? A test that passes? A doc?
+- **Set constraints.** Branch name, code style, no direct commits to main.
+
+**How NOT to delegate:**
+- "Do Sprint 2" → Too broad. Break it into 3-5 concrete Worker tasks.
+- Delegating without reading the Worker's output → You own the quality.
+- Spawning 10 Workers for interdependent tasks → Parallelize only independent work.
+
+**The pattern:**
+```
+Lead receives sprint tasks
+  → Breaks into 3-5 Worker tasks
+  → Spawns Workers in parallel (where independent)
+  → Reviews Worker output
+  → Integrates, tests, commits
+  → Reports to Coordinator
+```
+
+**This applies to Coordinator too.** Clawd delegates to Forge and Prism. Forge and Prism delegate to Workers. Workers do the work. Leads ensure quality. Coordinator ensures coherence.
+
 Sprint duration: **flexible** (1-3 hours of agent time). Quality > Speed.
 
 ---
