@@ -126,12 +126,22 @@ Prefer JVM tests. They're faster and can run anywhere (including our ARM64 serve
 
 ## 🔄 Sprint Rhythm
 
-1. **Coordinator assigns sprint tasks** with clear deliverables
-2. **Agents work on their branches**, testing as they go
-3. **Agents report completion** with summary: what works, what doesn't, what's next
-4. **Coordinator reviews and merges** to main
-5. **Sprint retro** (brief): What went well? What sucked? What to change?
-6. **Next sprint planned** based on priorities + learnings
+### Phase 1: Clarify (MANDATORY before any work)
+1. **Coordinator assigns sprint tasks** with deliverables
+2. **Agents ask clarifying questions** — technical ambiguities, scope, dependencies, API contracts
+3. **Coordinator synthesizes questions** — answers what he can, escalates to Jeremias if needed
+4. **Answers distributed** — all agents get the full Q&A context
+
+### Phase 2: Execute
+5. **Agents work on their branches**, testing as they go
+6. **Agents report completion** with summary: what works, what doesn't, what's next
+
+### Phase 3: Review
+7. **Coordinator reviews and merges** to main
+8. **Sprint retro** (brief): What went well? What sucked? What to change?
+9. **Next sprint planned** based on priorities + learnings
+
+**The Clarify phase is NOT optional.** Asking questions before coding saves hours of rework. Better to spend 5 minutes clarifying than 50 minutes building the wrong thing.
 
 Sprint duration: **flexible** (1-3 hours of agent time). Quality > Speed.
 
