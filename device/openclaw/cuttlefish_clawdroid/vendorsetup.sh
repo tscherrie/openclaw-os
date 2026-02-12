@@ -1,5 +1,4 @@
 #!/bin/bash
 # OpenClaw Cuttlefish lunch combos
-
-add_lunch_combo clawdroid_cf_arm64-userdebug
-add_lunch_combo clawdroid_cf_arm64-user
+# Deprecated: lunch combos are defined via COMMON_LUNCH_CHOICES
+# in AndroidProducts.mk (release-aware format).

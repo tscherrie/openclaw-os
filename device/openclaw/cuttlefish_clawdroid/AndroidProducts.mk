@@ -6,5 +6,5 @@ PRODUCT_MAKEFILES := \
     $(LOCAL_DIR)/clawdroid_cf_arm64.mk
 
 COMMON_LUNCH_CHOICES := \
-    clawdroid_cf_arm64-userdebug \
-    clawdroid_cf_arm64-user
+    clawdroid_cf_arm64-trunk_staging-userdebug \
+    clawdroid_cf_arm64-trunk_staging-user
