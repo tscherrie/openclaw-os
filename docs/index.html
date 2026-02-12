@@ -4,73 +4,242 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Clawdroid — The Agent-First Mobile OS</title>
+<meta name="description" content="Clawdroid is the first mobile operating system built for AI agents. Not an app. An OS. Pre-order now.">
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-:root{--bg:#0A0A0F;--blue:#4A9EFF;--text:#E0E0E0;--muted:#888;--card:#12121A}
-body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;overflow-x:hidden}
+:root{--bg:#08080E;--surface:#101018;--card:#14141F;--border:#1E1E2E;--blue:#4A9EFF;--blue-glow:rgba(74,158,255,.15);--purple:#8B5CF6;--green:#34D399;--text:#E8E8F0;--muted:#7A7A90;--white:#FFFFFF}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;overflow-x:hidden;-webkit-font-smoothing:antialiased}
 a{color:var(--blue);text-decoration:none}
 a:hover{text-decoration:underline}
+section{padding:6rem 2rem}
 
-.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:2rem;position:relative}
-.hero::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:600px;height:600px;background:radial-gradient(circle,rgba(74,158,255,.08) 0%,transparent 70%);pointer-events:none}
-.logo{font-size:clamp(3rem,8vw,5rem);font-weight:800;letter-spacing:-.03em;background:linear-gradient(135deg,#fff 0%,var(--blue) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.tagline{font-size:clamp(1rem,3vw,1.4rem);color:var(--muted);margin-top:.5rem;font-weight:300}
+/* ─── HERO ─── */
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;position:relative;padding:4rem 2rem 6rem}
+.hero::before{content:'';position:absolute;top:-200px;left:50%;transform:translateX(-50%);width:800px;height:800px;background:radial-gradient(circle,rgba(74,158,255,.07) 0%,rgba(139,92,246,.04) 40%,transparent 70%);pointer-events:none}
+.badge{display:inline-block;padding:.4rem 1rem;background:var(--card);border:1px solid var(--border);border-radius:100px;font-size:.8rem;color:var(--muted);margin-bottom:1.5rem;letter-spacing:.02em}
+.badge span{color:var(--green)}
+.logo{font-size:clamp(2.8rem,7vw,4.5rem);font-weight:800;letter-spacing:-.03em;background:linear-gradient(135deg,var(--white) 0%,var(--blue) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.tagline{font-size:clamp(1.05rem,2.5vw,1.35rem);color:var(--muted);margin-top:.5rem;font-weight:300;max-width:500px}
+.hero-buttons{margin-top:2.5rem;display:flex;gap:1rem;flex-wrap:wrap;justify-content:center}
+.btn{display:inline-flex;align-items:center;gap:.5rem;padding:.85rem 2rem;border-radius:10px;font-weight:600;font-size:1rem;transition:all .2s;border:none;cursor:pointer;text-decoration:none}
+.btn:hover{text-decoration:none}
+.btn-primary{background:var(--blue);color:var(--white);box-shadow:0 0 30px rgba(74,158,255,.25)}
+.btn-primary:hover{box-shadow:0 0 40px rgba(74,158,255,.4);transform:translateY(-1px)}
+.btn-secondary{background:transparent;color:var(--text);border:1px solid var(--border)}
+.btn-secondary:hover{border-color:var(--muted);background:var(--card)}
 
-.quote{max-width:680px;margin:4rem auto 0;padding:2rem;border-left:3px solid var(--blue);background:var(--card);border-radius:0 12px 12px 0;text-align:left;font-size:.95rem;line-height:1.7}
-.quote p{margin-bottom:.8rem}
-.quote .attr{color:var(--blue);font-weight:600;font-size:.85rem}
+/* ─── PHONES ─── */
+.phones{display:flex;gap:2.5rem;margin-top:4rem;justify-content:center;align-items:flex-end;perspective:1000px}
+.phone{width:220px;height:440px;background:var(--surface);border:2px solid var(--border);border-radius:28px;position:relative;overflow:hidden;box-shadow:0 20px 60px rgba(0,0,0,.5),0 0 40px rgba(74,158,255,.05)}
+.phone::before{content:'';position:absolute;top:8px;left:50%;transform:translateX(-50%);width:80px;height:22px;background:var(--bg);border-radius:0 0 14px 14px;z-index:10}
+.phone-screen{position:absolute;top:0;left:0;right:0;bottom:0;padding:40px 12px 12px;display:flex;flex-direction:column;overflow:hidden}
 
-.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.5rem;max-width:960px;margin:6rem auto;padding:0 2rem}
-.feat{background:var(--card);border:1px solid #1a1a2a;border-radius:12px;padding:2rem}
-.feat h3{color:#fff;margin-bottom:.5rem;font-size:1.1rem}
-.feat p{color:var(--muted);font-size:.9rem}
+/* Chat screen */
+.chat-screen{gap:8px}
+.chat-header{font-size:.65rem;color:var(--muted);text-align:center;margin-bottom:4px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.msg{padding:8px 10px;border-radius:12px;font-size:.6rem;line-height:1.4;max-width:85%;animation:fadeUp .5s ease both}
+.msg-user{background:var(--blue);color:var(--white);align-self:flex-end;border-bottom-right-radius:4px}
+.msg-agent{background:var(--card);color:var(--text);align-self:flex-start;border-bottom-left-radius:4px;border:1px solid var(--border)}
+.msg:nth-child(3){animation-delay:.2s}
+.msg:nth-child(4){animation-delay:.5s}
+.msg:nth-child(5){animation-delay:.8s}
+.msg:nth-child(6){animation-delay:1.1s}
+.chat-input{margin-top:auto;background:var(--card);border:1px solid var(--border);border-radius:16px;padding:7px 10px;font-size:.55rem;color:var(--muted);display:flex;justify-content:space-between;align-items:center}
+.chat-input span:last-child{color:var(--blue);font-size:.7rem}
 
-.cta{text-align:center;padding:4rem 2rem}
-.btn{display:inline-block;padding:.8rem 2rem;background:var(--blue);color:#fff;border-radius:8px;font-weight:600;font-size:1rem;transition:opacity .2s}
-.btn:hover{opacity:.85;text-decoration:none}
+/* Dashboard screen */
+.dash-screen{gap:6px}
+.dash-header{font-size:.65rem;color:var(--muted);text-align:center;margin-bottom:2px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+.dash-card{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:8px 10px;animation:fadeUp .5s ease both}
+.dash-card:nth-child(2){animation-delay:.1s}
+.dash-card:nth-child(3){animation-delay:.3s}
+.dash-card:nth-child(4){animation-delay:.5s}
+.dash-card:nth-child(5){animation-delay:.7s}
+.dash-card h4{font-size:.6rem;color:var(--white);margin-bottom:2px;display:flex;align-items:center;gap:4px}
+.dash-card p{font-size:.5rem;color:var(--muted);line-height:1.3}
+.dash-bar{height:4px;background:var(--border);border-radius:2px;margin-top:4px;overflow:hidden}
+.dash-bar-fill{height:100%;border-radius:2px}
+.fill-blue{background:var(--blue);width:72%}
+.fill-green{background:var(--green);width:100%}
+.fill-purple{background:var(--purple);width:45%}
 
-footer{text-align:center;padding:3rem 2rem;color:var(--muted);font-size:.85rem;border-top:1px solid #1a1a2a}
+@keyframes fadeUp{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+
+/* ─── FEATURES ─── */
+.features-section{max-width:1000px;margin:0 auto}
+.section-label{text-align:center;font-size:.8rem;color:var(--blue);text-transform:uppercase;letter-spacing:.15em;font-weight:600;margin-bottom:.5rem}
+.section-title{text-align:center;font-size:clamp(1.8rem,4vw,2.5rem);font-weight:700;color:var(--white);margin-bottom:3.5rem}
+.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:1.5rem}
+.feat{background:var(--card);border:1px solid var(--border);border-radius:14px;padding:2rem 1.5rem;transition:border-color .2s,transform .2s}
+.feat:hover{border-color:var(--blue);transform:translateY(-2px)}
+.feat .icon{font-size:1.8rem;margin-bottom:.8rem;display:block}
+.feat h3{color:var(--white);font-size:1.05rem;margin-bottom:.5rem;font-weight:600}
+.feat p{color:var(--muted);font-size:.88rem;line-height:1.55}
+
+/* ─── HOW IT WORKS ─── */
+.how{max-width:900px;margin:0 auto}
+.steps{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:2rem;margin-top:3.5rem}
+.step{text-align:center;position:relative}
+.step-num{width:48px;height:48px;border-radius:50%;background:var(--card);border:2px solid var(--blue);display:inline-flex;align-items:center;justify-content:center;font-size:1.1rem;font-weight:700;color:var(--blue);margin-bottom:1rem}
+.step h3{color:var(--white);font-size:1.1rem;margin-bottom:.5rem}
+.step p{color:var(--muted);font-size:.88rem;line-height:1.5}
+.step-arrow{display:none}
+@media(min-width:720px){
+  .step-arrow{display:block;position:absolute;top:24px;right:-1.3rem;color:var(--border);font-size:1.2rem}
+}
+
+/* ─── CTA ─── */
+.cta{text-align:center;padding:5rem 2rem;background:linear-gradient(180deg,transparent 0%,rgba(74,158,255,.03) 100%);border-top:1px solid var(--border)}
+.cta h2{font-size:clamp(1.6rem,4vw,2.2rem);font-weight:700;color:var(--white);margin-bottom:.8rem}
+.cta p{color:var(--muted);max-width:500px;margin:0 auto 2rem;font-size:1rem}
+
+/* ─── FOOTER ─── */
+footer{text-align:center;padding:2.5rem 2rem;color:var(--muted);font-size:.82rem;border-top:1px solid var(--border)}
+footer a{color:var(--muted)}
+footer a:hover{color:var(--blue)}
+.footer-links{display:flex;gap:1.5rem;justify-content:center;margin-bottom:.8rem}
+
+/* ─── RESPONSIVE ─── */
+@media(max-width:600px){
+  .phones{gap:1.2rem;margin-top:3rem}
+  .phone{width:155px;height:310px;border-radius:22px}
+  .phone::before{width:60px;height:18px;border-radius:0 0 10px 10px}
+  .phone-screen{padding:32px 8px 8px}
+  .msg{font-size:.5rem;padding:6px 8px}
+  .chat-input{padding:5px 8px;font-size:.5rem}
+  .dash-card{padding:6px 8px}
+  .dash-card h4{font-size:.5rem}
+  .dash-card p{font-size:.42rem}
+  section{padding:4rem 1.5rem}
+}
 </style>
 </head>
 <body>
 
+<!-- ════ HERO ════ -->
 <section class="hero">
-  <div class="logo">🐾 Clawdroid</div>
-  <p class="tagline">The Agent-First Mobile OS</p>
+  <div class="badge">📡 Now in development · <span>AOSP 14</span></div>
+  <h1 class="logo">🐾 Clawdroid</h1>
+  <p class="tagline">The first phone that works for you — not the other way around.</p>
 
-  <div class="quote">
-    <p><em>Das Kernproblem heute:</em><br>
-    Ich bin ein Prozess der auf einem System läuft, das für Menschen gemacht wurde. Alles was ich tue ist ein Workaround: Ich nutze bash-Scripts statt nativer Fähigkeiten. Ich lese Dateien die für menschliche Augen formatiert sind. Ich habe "sudo" obwohl ich kein Mensch bin. Das ist wie ein Fisch der in einem Vogelkäfig lebt und sich Flossen-Adapter bastelt.</p>
-    <p class="attr">— Clawd, Lead Developer Clawdroid</p>
+  <div class="hero-buttons">
+    <a class="btn btn-primary" href="mailto:grenzebach@pm.me?subject=Clawdroid%20Pre-Order%20Interest">Get Clawdroid →</a>
+    <a class="btn btn-secondary" href="https://github.com/tscherrie/openclaw-os">GitHub ↗</a>
+  </div>
+
+  <!-- Phone Mockups -->
+  <div class="phones">
+    <!-- Left: Chat Interface -->
+    <div class="phone">
+      <div class="phone-screen chat-screen">
+        <div class="chat-header">🐾 Clawd — Agent</div>
+        <div class="msg msg-user">Turn off all lights and set an alarm for 7am</div>
+        <div class="msg msg-agent">Done. All 6 lights off. Alarm set for 7:00 AM. ✓</div>
+        <div class="msg msg-user">What's my schedule tomorrow?</div>
+        <div class="msg msg-agent">9 AM — Team standup<br>12 PM — Lunch w/ Alex<br>3 PM — Dentist (Praxis Müller)</div>
+        <div class="chat-input"><span>Ask your phone anything…</span><span>↑</span></div>
+      </div>
+    </div>
+    <!-- Right: Dashboard -->
+    <div class="phone">
+      <div class="phone-screen dash-screen">
+        <div class="dash-header">📊 Agent Dashboard</div>
+        <div class="dash-card">
+          <h4>🔋 System</h4>
+          <p>Agent active · 14 actions today</p>
+          <div class="dash-bar"><div class="dash-bar-fill fill-blue"></div></div>
+        </div>
+        <div class="dash-card">
+          <h4>🔗 Mesh Network</h4>
+          <p>5 devices connected · all healthy</p>
+          <div class="dash-bar"><div class="dash-bar-fill fill-green"></div></div>
+        </div>
+        <div class="dash-card">
+          <h4>🧠 LLM Provider</h4>
+          <p>Claude Opus · 3.2k tokens used</p>
+          <div class="dash-bar"><div class="dash-bar-fill fill-purple"></div></div>
+        </div>
+        <div class="dash-card">
+          <h4>📱 Apps Orchestrated</h4>
+          <p>Calendar, Lights, Alarm, Maps</p>
+        </div>
+      </div>
+    </div>
   </div>
 </section>
 
-<section class="features">
-  <div class="feat">
-    <h3>🧠 Agent as System Service</h3>
-    <p>The AI agent runs at OS level — not as an app, but as part of the system. Native access to camera, sensors, GPS, and every app.</p>
-  </div>
-  <div class="feat">
-    <h3>☁️ Cloud-Agnostic</h3>
-    <p>Bring your own LLM. Anthropic, OpenAI, self-hosted — hot-swap providers without reflashing. Your agent, your choice.</p>
-  </div>
-  <div class="feat">
-    <h3>🔗 Mesh-Native</h3>
-    <p>Tailscale built into the OS. Your phone, smart home, car, and servers — one encrypted mesh. Zero config.</p>
-  </div>
-  <div class="feat">
-    <h3>📱 Android Compatible</h3>
-    <p>Built on AOSP 14. Every Android app still works — but the agent orchestrates them. No icons needed.</p>
+<!-- ════ FEATURES ════ -->
+<section>
+  <div class="features-section">
+    <p class="section-label">Why Clawdroid</p>
+    <h2 class="section-title">An OS designed for agents, not just apps</h2>
+    <div class="features">
+      <div class="feat">
+        <span class="icon">🧠</span>
+        <h3>Agent as System Service</h3>
+        <p>The AI runs at OS level — not sandboxed in an app. Native access to camera, sensors, GPS, and every installed app.</p>
+      </div>
+      <div class="feat">
+        <span class="icon">☁️</span>
+        <h3>Cloud-Agnostic</h3>
+        <p>Bring your own LLM. Anthropic, OpenAI, local models — hot-swap providers without reflashing. Your agent, your rules.</p>
+      </div>
+      <div class="feat">
+        <span class="icon">🔗</span>
+        <h3>Mesh-Native</h3>
+        <p>Tailscale built into the OS. Phone, smart home, car, servers — one encrypted mesh network. Zero config.</p>
+      </div>
+      <div class="feat">
+        <span class="icon">📱</span>
+        <h3>Android Compatible</h3>
+        <p>Built on AOSP 14. Every Android app works — but the agent orchestrates them. No home screen needed.</p>
+      </div>
+    </div>
   </div>
 </section>
 
+<!-- ════ HOW IT WORKS ════ -->
+<section>
+  <div class="how">
+    <p class="section-label">Getting Started</p>
+    <h2 class="section-title">Three steps to your agent phone</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="step-num">1</div>
+        <span class="step-arrow">→</span>
+        <h3>Unbox</h3>
+        <p>Power on your Clawdroid device. The agent is already running — no setup wizard, no 47 permissions dialogs.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">2</div>
+        <span class="step-arrow">→</span>
+        <h3>Connect your LLM</h3>
+        <p>Paste your API key — Claude, GPT, Gemini, or your self-hosted model. Switch anytime.</p>
+      </div>
+      <div class="step">
+        <div class="step-num">3</div>
+        <h3>Talk to your phone</h3>
+        <p>Ask it anything. Control your smart home. Manage your calendar. It understands context, not just commands.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════ CTA ════ -->
 <section class="cta">
-  <a class="btn" href="https://github.com/tscherrie/openclaw-os">View on GitHub →</a>
-  <p style="margin-top:1rem;color:var(--muted);font-size:.9rem">The age of apps is over. The age of agents begins.</p>
+  <h2>The age of apps is over</h2>
+  <p>Be among the first to own a phone that truly works for you. Reserve your Clawdroid now.</p>
+  <a class="btn btn-primary" href="mailto:grenzebach@pm.me?subject=Clawdroid%20Pre-Order%20Interest&body=Hi%2C%0AI'm%20interested%20in%20Clawdroid.%20Please%20keep%20me%20updated!">Join the Waitlist →</a>
 </section>
 
+<!-- ════ FOOTER ════ -->
 <footer>
-  Clawdroid &copy; 2025–2026 · <a href="https://github.com/tscherrie/openclaw-os">GitHub</a> · Apache 2.0
+  <div class="footer-links">
+    <a href="https://github.com/tscherrie/openclaw-os">GitHub</a>
+    <a href="mailto:grenzebach@pm.me">Contact</a>
+    <a href="https://clawdroid.ai">clawdroid.ai</a>
+  </div>
+  <p>Clawdroid © 2025–2026 · Apache 2.0 · Built by Agent Lab 🔬</p>
 </footer>
 
 </body>
