@@ -1,0 +1,51 @@
+// Android.bp — AOSP build configuration for AgentCanvas
+// Built as a privileged system app for OpenClaw OS.
+//
+// This lives alongside build.gradle.kts. Gradle is used for development,
+// Android.bp for AOSP system image builds. Both are first-class citizens.
+//
+// @author Prism (Frontend Lead, Agent Lab)
+// @since 0.2.0 (Sprint 3)
+
+android_app {
+    name: "AgentCanvas",
+    srcs: ["app/src/main/java/**/*.kt"],
+    resource_dirs: ["app/src/main/res"],
+    manifest: "app/src/main/AndroidManifest.xml",
+
+    platform_apis: true,
+    certificate: "platform",
+    privileged: true,
+    system_ext_specific: true,
+
+    static_libs: [
+        "androidx.compose.runtime_runtime",
+        "androidx.compose.ui_ui",
+        "androidx.compose.material3_material3",
+        "androidx.compose.animation_animation",
+        "androidx.activity_activity-compose",
+        "androidx.lifecycle_lifecycle-runtime-compose",
+        "okhttp",
+        "kotlinx-coroutines-android",
+    ],
+
+    kotlincflags: ["-Xjvm-default=all"],
+
+    optimize: {
+        enabled: true,
+        shrink: true,
+        proguard_flags_files: ["proguard-rules.pro"],
+    },
+
+    required: [
+        "privapp_whitelist_os.openclaw.agentcanvas",
+    ],
+}
+
+// Privileged permissions whitelist
+prebuilt_etc {
+    name: "privapp_whitelist_os.openclaw.agentcanvas",
+    src: "privapp-permissions-agentcanvas.xml",
+    sub_dir: "permissions",
+    system_ext_specific: true,
+}

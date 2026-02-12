@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Privileged permissions whitelist for AgentCanvas.
+    Required when installed as a privileged system app in /system_ext/priv-app/.
+-->
+<permissions>
+    <privapp-permissions package="os.openclaw.agentcanvas">
+        <!-- Add privileged permissions here as needed -->
+        <!-- e.g., <permission name="android.permission.INTERACT_ACROSS_USERS"/> -->
+    </privapp-permissions>
+</permissions>

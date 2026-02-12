@@ -69,7 +69,27 @@ data class Message(
     val sender: Sender,
     val text: String,
     val timestamp: Long = System.currentTimeMillis(),
+    val error: MessageError? = null,
+    val isStreaming: Boolean = false,
 )
+
+/**
+ * Error attached to a message. Renders as a distinct error bubble.
+ * Because failure deserves good UX too.
+ */
+data class MessageError(
+    val kind: MessageErrorKind,
+    val message: String,
+    val retryable: Boolean = false,
+)
+
+enum class MessageErrorKind {
+    CloudUnavailable,
+    AuthFailed,
+    RateLimited,
+    Offline,
+    Unknown,
+}
 
 enum class Sender {
     Agent,  // The one who knows things
