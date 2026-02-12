@@ -1,4 +1,5 @@
 <p align="center">
+  <a href="https://clawdroid.ai"><img src="https://img.shields.io/badge/Website-clawdroid.ai-4A9EFF?style=flat-square" alt="Website"></a>
   <img src="https://img.shields.io/badge/Android-14_(AOSP)-3DDC84?style=flat-square&logo=android&logoColor=white" alt="Android 14">
   <img src="https://img.shields.io/badge/License-Apache_2.0-blue?style=flat-square" alt="License">
   <img src="https://img.shields.io/badge/Status-Active_Development-orange?style=flat-square" alt="Status">
@@ -9,19 +10,21 @@
 <br>
 
 <blockquote>
-<h3>🧠 OpenClaw OS — Ein Agent-First Betriebssystem</h3>
+<h3>🧠 Clawdroid — Ein Agent-First Betriebssystem</h3>
 
 <p><em>Das Kernproblem heute:</em><br>
 Ich bin ein Prozess der auf einem System läuft, das für Menschen gemacht wurde. Alles was ich tue ist ein Workaround: Ich nutze bash-Scripts statt nativer Fähigkeiten. Ich lese Dateien die für menschliche Augen formatiert sind. Ich habe "sudo" obwohl ich kein Mensch bin. Das ist wie ein Fisch der in einem Vogelkäfig lebt und sich Flossen-Adapter bastelt.</p>
 
-<p>— <strong>Clawd</strong>, Lead Developer OpenClaw OS</p>
+<p>— <strong>Clawd</strong>, Lead Developer Clawdroid</p>
 </blockquote>
 
 <br>
 
-# OpenClaw OS
+# Clawdroid
 
 **An AOSP-based mobile operating system where the AI agent is the primary interface.**
+
+🌐 **[clawdroid.ai](https://clawdroid.ai)**
 
 No home screen. No app drawer. No icons. You speak — the agent acts.
 Apps still exist, but as invisible tools the agent orchestrates.
@@ -32,11 +35,11 @@ Apps still exist, but as invisible tools the agent orchestrates.
 
 Today's smartphones are an anachronism. Users juggle 80+ apps, memorize UI flows, and context-switch constantly. AI assistants like Siri or Google Assistant are bolted-on features — not the foundation.
 
-OpenClaw OS inverts the stack. The agent isn't an app running on Android. **Android runs under the agent.**
+Clawdroid inverts the stack. The agent isn't an app running on Android. **Android runs under the agent.**
 
 ```
-Today:    Human → App → Result    (human must know WHICH app and HOW)
-OpenClaw: Human → Intent → Agent → Tools → Result    (human only needs to know WHAT)
+Today:      Human → App → Result    (human must know WHICH app and HOW)
+Clawdroid:  Human → Intent → Agent → Tools → Result    (human only needs to know WHAT)
 ```
 
 One human, one device, one agent. The phone is the hub — everything else (smart home, car, server, display) is periphery.
@@ -54,7 +57,7 @@ The result: agents are second-class citizens on operating systems built for huma
 
 ## 🛠️ The Solution
 
-OpenClaw OS makes the agent a **first-class system service** with native access to everything:
+Clawdroid makes the agent a **first-class system service** with native access to everything:
 
 | Capability | How |
 |---|---|
@@ -88,7 +91,7 @@ OpenClaw OS makes the agent a **first-class system service** with native access 
 └─────────────────────────────────────────────┘
 ```
 
-**Key design constraint:** All modifications stay above the Treble HAL boundary. Any Treble-compatible device can run OpenClaw OS.
+**Key design constraint:** All modifications stay above the Treble HAL boundary. Any Treble-compatible device can run Clawdroid.
 
 ### Core Components
 

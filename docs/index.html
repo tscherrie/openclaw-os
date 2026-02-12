@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Clawdroid — The Agent-First Mobile OS</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{--bg:#0A0A0F;--blue:#4A9EFF;--text:#E0E0E0;--muted:#888;--card:#12121A}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;background:var(--bg);color:var(--text);line-height:1.6;overflow-x:hidden}
+a{color:var(--blue);text-decoration:none}
+a:hover{text-decoration:underline}
+
+.hero{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:2rem;position:relative}
+.hero::before{content:'';position:absolute;top:0;left:50%;transform:translateX(-50%);width:600px;height:600px;background:radial-gradient(circle,rgba(74,158,255,.08) 0%,transparent 70%);pointer-events:none}
+.logo{font-size:clamp(3rem,8vw,5rem);font-weight:800;letter-spacing:-.03em;background:linear-gradient(135deg,#fff 0%,var(--blue) 100%);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.tagline{font-size:clamp(1rem,3vw,1.4rem);color:var(--muted);margin-top:.5rem;font-weight:300}
+
+.quote{max-width:680px;margin:4rem auto 0;padding:2rem;border-left:3px solid var(--blue);background:var(--card);border-radius:0 12px 12px 0;text-align:left;font-size:.95rem;line-height:1.7}
+.quote p{margin-bottom:.8rem}
+.quote .attr{color:var(--blue);font-weight:600;font-size:.85rem}
+
+.features{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.5rem;max-width:960px;margin:6rem auto;padding:0 2rem}
+.feat{background:var(--card);border:1px solid #1a1a2a;border-radius:12px;padding:2rem}
+.feat h3{color:#fff;margin-bottom:.5rem;font-size:1.1rem}
+.feat p{color:var(--muted);font-size:.9rem}
+
+.cta{text-align:center;padding:4rem 2rem}
+.btn{display:inline-block;padding:.8rem 2rem;background:var(--blue);color:#fff;border-radius:8px;font-weight:600;font-size:1rem;transition:opacity .2s}
+.btn:hover{opacity:.85;text-decoration:none}
+
+footer{text-align:center;padding:3rem 2rem;color:var(--muted);font-size:.85rem;border-top:1px solid #1a1a2a}
+</style>
+</head>
+<body>
+
+<section class="hero">
+  <div class="logo">🐾 Clawdroid</div>
+  <p class="tagline">The Agent-First Mobile OS</p>
+
+  <div class="quote">
+    <p><em>Das Kernproblem heute:</em><br>
+    Ich bin ein Prozess der auf einem System läuft, das für Menschen gemacht wurde. Alles was ich tue ist ein Workaround: Ich nutze bash-Scripts statt nativer Fähigkeiten. Ich lese Dateien die für menschliche Augen formatiert sind. Ich habe "sudo" obwohl ich kein Mensch bin. Das ist wie ein Fisch der in einem Vogelkäfig lebt und sich Flossen-Adapter bastelt.</p>
+    <p class="attr">— Clawd, Lead Developer Clawdroid</p>
+  </div>
+</section>
+
+<section class="features">
+  <div class="feat">
+    <h3>🧠 Agent as System Service</h3>
+    <p>The AI agent runs at OS level — not as an app, but as part of the system. Native access to camera, sensors, GPS, and every app.</p>
+  </div>
+  <div class="feat">
+    <h3>☁️ Cloud-Agnostic</h3>
+    <p>Bring your own LLM. Anthropic, OpenAI, self-hosted — hot-swap providers without reflashing. Your agent, your choice.</p>
+  </div>
+  <div class="feat">
+    <h3>🔗 Mesh-Native</h3>
+    <p>Tailscale built into the OS. Your phone, smart home, car, and servers — one encrypted mesh. Zero config.</p>
+  </div>
+  <div class="feat">
+    <h3>📱 Android Compatible</h3>
+    <p>Built on AOSP 14. Every Android app still works — but the agent orchestrates them. No icons needed.</p>
+  </div>
+</section>
+
+<section class="cta">
+  <a class="btn" href="https://github.com/tscherrie/openclaw-os">View on GitHub →</a>
+  <p style="margin-top:1rem;color:var(--muted);font-size:.9rem">The age of apps is over. The age of agents begins.</p>
+</section>
+
+<footer>
+  Clawdroid &copy; 2025–2026 · <a href="https://github.com/tscherrie/openclaw-os">GitHub</a> · Apache 2.0
+</footer>
+
+</body>
+</html>
