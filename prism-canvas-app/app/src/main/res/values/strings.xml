@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OpenClaw Canvas</string>
+    <string name="eingabe_hinweis">Nachricht eingeben…</string>
+    <string name="senden">Senden</string>
+    <string name="agent_name">Agent</string>
+    <string name="du">Du</string>
+    <string name="agent_denkt">Agent denkt…</string>
+</resources>
