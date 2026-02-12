@@ -68,39 +68,30 @@ It's the bridge between "the user wants something" and "something happens."
 ```
 src/packages/AgentCoreService/
 ├── Android.bp                          # Build configuration
-├── config/
-│   └── privapp-permissions-openclaw-agent.xml
+├── permissions/
+│   └── privapp-permissions-openclaw.xml
 ├── src/
 │   ├── main/
 │   │   ├── AndroidManifest.xml
 │   │   ├── aidl/com/openclaw/agent/
 │   │   │   ├── IAgentCoreService.aidl      # Main service API
 │   │   │   ├── IAgentResponseCallback.aidl  # Streaming response
-│   │   │   ├── IAgentEventListener.aidl     # Event notifications
-│   │   │   ├── AgentRequest.aidl            # Request parcelable
-│   │   │   └── AgentCapability.aidl         # Capability parcelable
-│   │   ├── kotlin/com/openclaw/agent/
-│   │   │   ├── core/
-│   │   │   │   ├── AgentApplication.kt      # Application lifecycle
-│   │   │   │   ├── AgentCoreService.kt      # THE service
-│   │   │   │   ├── BootReceiver.kt          # Start on boot
-│   │   │   │   └── Models.kt               # Data classes
-│   │   │   ├── cloud/
-│   │   │   │   └── CloudBridge.kt           # LLM communication
-│   │   │   ├── context/
-│   │   │   │   └── ContextManager.kt        # Memory & awareness
-│   │   │   ├── tools/
-│   │   │   │   └── ToolRegistry.kt          # Tool system + built-ins
-│   │   │   ├── permissions/
-│   │   │   │   └── CapabilityManager.kt     # Agent permissions
-│   │   │   ├── accessibility/
-│   │   │   │   └── AgentAccessibilityBridge.kt  # App automation
-│   │   │   └── tailscale/
-│   │   │       └── TailscaleBridge.kt       # Mesh networking
+│   │   │   └── IAgentEventListener.aidl     # Event notifications
 │   │   └── res/
 │   │       ├── values/strings.xml
 │   │       └── xml/accessibility_config.xml
-│   └── test/kotlin/com/openclaw/agent/       # Tests (next sprint)
+│   ├── com/openclaw/agent/
+│   │   ├── AgentCoreService.kt      # Core service logic
+│   │   ├── bridge/CloudBridge.kt    # LLM communication
+│   │   ├── bridge/AccessibilityBridge.kt
+│   │   ├── bridge/TailscaleBridge.kt
+│   │   ├── context/ContextManager.kt
+│   │   ├── intent/IntentRouter.kt
+│   │   ├── model/Models.kt
+│   │   ├── peripheral/PeripheralManager.kt
+│   │   ├── security/SecurityManager.kt
+│   │   └── tools/ToolRegistry.kt
+│   └── test/kotlin/com/openclaw/agent/  # Tests (specs, stubs)
 ```
 
 ---
@@ -113,16 +104,14 @@ The main interface between the Agent Canvas (frontend) and the Agent Core (backe
 
 | Method | Description | Returns |
 |--------|-------------|---------|
-| `submitRequest(request, callback)` | Send user input to agent | `requestId: String` |
+| `submitRequest(text, callback)` | Send user input to agent | `requestId: String` |
 | `cancelRequest(requestId)` | Cancel in-flight request | `Boolean` |
 | `getAgentState()` | Current state (idle/thinking/acting/...) | `Int` |
 | `registerEventListener(listener)` | Subscribe to agent events | `void` |
 | `unregisterEventListener(listener)` | Unsubscribe | `void` |
-| `getCapabilities()` | List all capabilities | `List<AgentCapability>` |
 | `setCapabilityEnabled(id, enabled)` | Toggle a capability | `Boolean` |
 | `confirmAction(actionId, confirmed)` | Approve/reject pending action | `void` |
 | `emergencyStop()` | 🚨 KILL SWITCH — stop everything | `void` |
-| `getHistory(limit)` | Recent conversation history | `List<AgentRequest>` |
 | `isCloudAvailable()` | Check cloud connectivity | `Boolean` |
 | `getContextSummary()` | Current context state | `String` |
 

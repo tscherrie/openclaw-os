@@ -44,6 +44,12 @@ class AgentCoreService(context: Context) {
     companion object {
         private const val TAG = "AgentCoreService"
         const val SERVICE_NAME = "agent_core"
+
+        // Boot Phase Constants (from SystemService)
+        const val PHASE_SYSTEM_SERVICES_READY = 500
+        const val PHASE_ACTIVITY_MANAGER_READY = 550
+        const val PHASE_THIRD_PARTY_APPS_READY = 600
+        const val PHASE_BOOT_COMPLETED = 1000
     }
 
     // === Core Components ===
@@ -309,14 +315,4 @@ class AgentCoreService(context: Context) {
         Slog.d(TAG, "Executing agent action: ${action.type}")
     }
 
-    // ==========================================
-    // Boot Phase Constants (from SystemService)
-    // ==========================================
-
-    companion object BootPhases {
-        const val PHASE_SYSTEM_SERVICES_READY = 500
-        const val PHASE_ACTIVITY_MANAGER_READY = 550
-        const val PHASE_THIRD_PARTY_APPS_READY = 600
-        const val PHASE_BOOT_COMPLETED = 1000
-    }
 }

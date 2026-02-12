@@ -31,7 +31,7 @@ android_app {
     
     // SDK version
     sdk_version: "current",
-    min_sdk_version: "35",  // Android 15
+    min_sdk_version: "34",  // Android 14
     
     // Install in priv-app
     required: [
