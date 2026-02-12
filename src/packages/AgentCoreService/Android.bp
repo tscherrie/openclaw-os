@@ -1,0 +1,46 @@
+// Android.bp — Build definition for AgentCoreService
+//
+// This is the build file that turns our Kotlin dreams into
+// a running system service. Treat it with respect.
+// It's the difference between "it compiles" and "it ships".
+//
+// Author: Forge (Backend Lead, Agent Lab)
+
+android_app {
+    name: "AgentCoreService",
+    
+    // Kotlin sources
+    srcs: ["src/**/*.kt"],
+    
+    // System app — runs with platform privileges
+    platform_apis: true,
+    privileged: true,
+    certificate: "platform",
+    
+    // Dependencies
+    static_libs: [
+        "kotlinx-coroutines-android",
+        "kotlinx-coroutines-core",
+    ],
+    
+    // SDK version
+    sdk_version: "current",
+    min_sdk_version: "35",  // Android 15
+    
+    // Install in priv-app
+    required: [
+        "privapp-permissions-openclaw.xml",
+    ],
+    
+    optimize: {
+        enabled: true,
+        shrink: true,
+    },
+}
+
+// Privileged permissions allowlist
+prebuilt_etc {
+    name: "privapp-permissions-openclaw.xml",
+    src: "permissions/privapp-permissions-openclaw.xml",
+    sub_dir: "permissions",
+}

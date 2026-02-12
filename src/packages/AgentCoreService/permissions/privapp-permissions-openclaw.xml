@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Privileged permissions for AgentCoreService.
+    
+    These permissions allow our system service to do its job:
+    controlling the phone, reading notifications, accessing
+    accessibility services, etc.
+    
+    With great power comes great responsibility.
+    And great commit messages.
+    
+    Author: Forge (Backend Lead, Agent Lab)
+-->
+<permissions>
+    <privapp-permissions package="com.openclaw.agent">
+        <!-- Read and manage notifications -->
+        <permission name="android.permission.MANAGE_NOTIFICATIONS"/>
+        
+        <!-- Accessibility service access (for app control) -->
+        <permission name="android.permission.BIND_ACCESSIBILITY_SERVICE"/>
+        
+        <!-- Phone call management -->
+        <permission name="android.permission.CALL_PHONE"/>
+        <permission name="android.permission.READ_PHONE_STATE"/>
+        <permission name="android.permission.MANAGE_OWN_CALLS"/>
+        
+        <!-- SMS -->
+        <permission name="android.permission.SEND_SMS"/>
+        <permission name="android.permission.READ_SMS"/>
+        
+        <!-- Camera and microphone -->
+        <permission name="android.permission.CAMERA"/>
+        <permission name="android.permission.RECORD_AUDIO"/>
+        
+        <!-- Location -->
+        <permission name="android.permission.ACCESS_FINE_LOCATION"/>
+        <permission name="android.permission.ACCESS_BACKGROUND_LOCATION"/>
+        
+        <!-- Calendar and contacts -->
+        <permission name="android.permission.READ_CALENDAR"/>
+        <permission name="android.permission.WRITE_CALENDAR"/>
+        <permission name="android.permission.READ_CONTACTS"/>
+        
+        <!-- Network (for cloud bridge and Tailscale) -->
+        <permission name="android.permission.INTERNET"/>
+        <permission name="android.permission.ACCESS_NETWORK_STATE"/>
+        <permission name="android.permission.CHANGE_NETWORK_STATE"/>
+        
+        <!-- System overlay (for agent UI) -->
+        <permission name="android.permission.SYSTEM_ALERT_WINDOW"/>
+        
+        <!-- Package management (for app info) -->
+        <permission name="android.permission.QUERY_ALL_PACKAGES"/>
+        
+        <!-- Foreground service -->
+        <permission name="android.permission.FOREGROUND_SERVICE"/>
+        
+        <!-- Secure settings (for system configuration) -->
+        <permission name="android.permission.WRITE_SECURE_SETTINGS"/>
+    </privapp-permissions>
+</permissions>
