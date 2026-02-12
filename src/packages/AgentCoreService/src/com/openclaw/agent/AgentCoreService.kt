@@ -12,12 +12,10 @@
 package com.openclaw.agent
 
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.os.IBinder
 import android.os.RemoteCallbackList
 import android.util.Slog
-import com.openclaw.agent.bridge.AccessibilityBridge
 import com.openclaw.agent.bridge.CloudBridge
 import com.openclaw.agent.bridge.TailscaleBridge
 import com.openclaw.agent.context.ContextManager
@@ -53,7 +51,7 @@ class AgentCoreService : Service() {
     private lateinit var toolRegistry: ToolRegistry
     private lateinit var intentRouter: IntentRouter
     private lateinit var securityManager: SecurityManager
-    private lateinit var accessibilityBridge: AccessibilityBridge
+    // AccessibilityBridge is now a system service (com.openclaw.agent.service.AccessibilityBridge)
     private lateinit var tailscaleBridge: TailscaleBridge
     private lateinit var peripheralManager: PeripheralManager
 
@@ -72,16 +70,12 @@ class AgentCoreService : Service() {
     )
 
     // ==========================================
-    // Lifecycle
+    // Android Service Lifecycle
     // ==========================================
 
-    /**
-     * Called when the service is first created.
-     * Initialize components but don't connect to anything yet.
-     * Think of this as waking up — eyes open, but not out of bed.
-     */
-    fun onStart() {
-        Slog.i(TAG, "AgentCoreService starting... 🔥")
+    override fun onCreate() {
+        super.onCreate()
+        Slog.i(TAG, "AgentCoreService.onCreate() 🔥")
 
         try {
             // Initialize components with dependency injection
@@ -90,7 +84,7 @@ class AgentCoreService : Service() {
             toolRegistry = ToolRegistry.create(securityManager)
             cloudBridge = CloudBridge.create()
             intentRouter = IntentRouter.create()
-            accessibilityBridge = AccessibilityBridge.create()
+            // AccessibilityBridge is now a system service — don't instantiate here
             tailscaleBridge = TailscaleBridge.create()
             peripheralManager = PeripheralManager.create(tailscaleBridge)
 
@@ -99,33 +93,75 @@ class AgentCoreService : Service() {
         } catch (e: Exception) {
             Slog.e(TAG, "Failed to initialize AgentCoreService", e)
             state = AgentState.ERROR
-            // Phone still works. We just don't have an agent.
-            // It's like a car without the radio — still drives.
         }
     }
 
-    /**
-     * Called at various boot phases.
-     * We progressively acquire capabilities as the system comes up.
-     */
-    fun onBootPhase(phase: Int) {
-        when (phase) {
-            PHASE_SYSTEM_SERVICES_READY -> {
-                Slog.i(TAG, "System services ready — acquiring references")
-                acquireSystemServiceReferences()
-            }
-            PHASE_ACTIVITY_MANAGER_READY -> {
-                Slog.i(TAG, "Activity manager ready — registering intent interceptors")
-                registerIntentInterceptors()
-            }
-            PHASE_THIRD_PARTY_APPS_READY -> {
-                Slog.i(TAG, "Third-party apps ready — initializing cloud bridge")
-                initializeCloudConnection()
-            }
-            PHASE_BOOT_COMPLETED -> {
-                Slog.i(TAG, "Boot completed — Agent is ALIVE! 🤖")
-                onAgentReady()
-            }
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Slog.i(TAG, "AgentCoreService.onStartCommand()")
+        return START_STICKY
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        Slog.i(TAG, "AgentCoreService.onDestroy()")
+        serviceScope.cancel()
+        eventListeners.kill()
+    }
+
+    override fun onBind(intent: Intent?): IBinder {
+        Slog.d(TAG, "onBind: ${intent?.action}")
+        return binder
+    }
+
+    // ==========================================
+    // AIDL Binder Implementation
+    // ==========================================
+
+    private val binder = object : IAgentCoreService.Stub() {
+        override fun submitRequest(
+            text: String?,
+            callback: IAgentResponseCallback?
+        ): String? {
+            // TODO: Implement streaming via callback
+            Slog.d(TAG, "submitRequest: $text")
+            return "stub-request-id"
+        }
+
+        override fun cancelRequest(requestId: String?): Boolean {
+            Slog.d(TAG, "cancelRequest: $requestId")
+            return false
+        }
+
+        override fun getAgentState(): Int = state.ordinal
+
+        override fun registerEventListener(listener: IAgentEventListener?) {
+            listener?.let { eventListeners.register(it) }
+            Slog.d(TAG, "registerEventListener")
+        }
+
+        override fun unregisterEventListener(listener: IAgentEventListener?) {
+            listener?.let { eventListeners.unregister(it) }
+            Slog.d(TAG, "unregisterEventListener")
+        }
+
+        override fun confirmAction(actionId: String?, confirmed: Boolean) {
+            Slog.d(TAG, "confirmAction: $actionId = $confirmed")
+        }
+
+        override fun emergencyStop() {
+            Slog.w(TAG, "🚨 EMERGENCY STOP")
+            serviceScope.coroutineContext.cancelChildren()
+            cloudBridge.cancelAll()
+            state = AgentState.STOPPED
+        }
+
+        override fun isCloudAvailable(): Boolean = cloudBridge.isConnected()
+
+        override fun getContextSummary(): String = "Not yet implemented"
+
+        override fun setCapabilityEnabled(capabilityId: String?, enabled: Boolean): Boolean {
+            Slog.d(TAG, "setCapabilityEnabled: $capabilityId = $enabled")
+            return false
         }
     }
 
@@ -232,72 +268,8 @@ class AgentCoreService : Service() {
     }
 
     // ==========================================
-    // Emergency Controls
-    // ==========================================
-
-    /**
-     * KILL SWITCH — Stop everything the agent is doing. Immediately.
-     * No questions asked. No "are you sure?" dialogs.
-     * When the human says stop, we stop.
-     */
-    fun emergencyStop() {
-        Slog.w(TAG, "🚨 EMERGENCY STOP activated")
-        serviceScope.coroutineContext.cancelChildren()
-        cloudBridge.cancelAll()
-        toolRegistry.cancelAll()
-        state = AgentState.STOPPED
-        // The agent sits in the corner and thinks about what it did.
-    }
-
-    // ==========================================
     // Private Helpers
     // ==========================================
-
-    private fun acquireSystemServiceReferences() {
-        // TODO: Get references to AMS, PMS, WMS, NMS, etc.
-        // These are needed for intent interception, app control, etc.
-        Slog.d(TAG, "Acquiring system service references...")
-    }
-
-    private fun registerIntentInterceptors() {
-        // TODO: Register with AMS for intent interception
-        Slog.d(TAG, "Registering intent interceptors...")
-    }
-
-    private fun initializeCloudConnection() {
-        serviceScope.launch {
-            try {
-                val health = cloudBridge.healthCheck()
-                if (health.connected) {
-                    state = AgentState.ACTIVE
-                    Slog.i(TAG, "Cloud bridge connected: ${health.provider}")
-                } else {
-                    Slog.w(TAG, "Cloud bridge not available, staying in degraded mode")
-                }
-            } catch (e: Exception) {
-                Slog.w(TAG, "Cloud connection failed, degraded mode active", e)
-            }
-        }
-    }
-
-    private fun onAgentReady() {
-        state = if (cloudBridge.isConnected()) AgentState.ACTIVE else AgentState.DEGRADED
-
-        // Register all built-in tools
-        registerBuiltInTools()
-
-        // Start peripheral discovery
-        serviceScope.launch {
-            peripheralManager.discoverDevices()
-        }
-
-        Slog.i(TAG, "Agent ready! State: $state. Let's go. 🚀")
-    }
-
-    private fun registerBuiltInTools() {
-        // TODO: Register all built-in tools (phone, SMS, camera, etc.)
-        Slog.d(TAG, "Registering built-in tools...")
-    }
 
     private fun processResponseFlow(
         responseFlow: Flow<AgentResponseChunk>
