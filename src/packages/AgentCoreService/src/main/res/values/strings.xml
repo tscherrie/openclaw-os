@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">OpenClaw Agent</string>
+    <string name="accessibility_service_label">OpenClaw Agent Bridge</string>
+    <string name="accessibility_service_description">Allows the AI agent to see and interact with apps on your behalf.</string>
+    <string name="state_idle">Ready</string>
+    <string name="state_listening">Listening…</string>
+    <string name="state_thinking">Thinking…</string>
+    <string name="state_acting">On it…</string>
+    <string name="state_error">Something went wrong</string>
+    <string name="state_offline">Offline mode</string>
+</resources>
