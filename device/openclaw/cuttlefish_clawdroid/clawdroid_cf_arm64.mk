@@ -7,14 +7,8 @@
 # Inherit from AOSP cuttlefish base
 $(call inherit-product, device/google/cuttlefish/vsoc_arm64/phone/aosp_cf.mk)
 
-# OpenClaw packages
-PRODUCT_PACKAGES += \
-    AgentCoreService \
-    privapp-permissions-openclaw.xml
-
-# Enable soong namespace for OpenClaw packages
-PRODUCT_SOONG_NAMESPACES += \
-    openclaw-os/src/packages
+# OpenClaw device configuration
+$(call inherit-product, device/openclaw/cuttlefish_clawdroid/device.mk)
 
 # Product info
 PRODUCT_NAME := clawdroid_cf_arm64
