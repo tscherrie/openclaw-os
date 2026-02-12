@@ -11,9 +11,11 @@
  */
 package com.openclaw.agent
 
+import android.app.Service
 import android.content.Context
 import android.content.Intent
 import android.os.IBinder
+import android.os.RemoteCallbackList
 import android.util.Slog
 import com.openclaw.agent.bridge.AccessibilityBridge
 import com.openclaw.agent.bridge.CloudBridge
@@ -28,28 +30,21 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.Flow
 
 /**
- * AgentCoreService — runs as a System Service inside system_server.
+ * AgentCoreService — runs as a privileged app Service.
  *
  * Lifecycle:
- *   1. Registered in SystemServer.startOtherServices()
- *   2. onStart() → initialize internal state
- *   3. onBootPhase() → progressively acquire system service references
- *   4. PHASE_BOOT_COMPLETED → agent is fully alive, ready to serve
+ *   1. onCreate() — initialize components (degraded mode)
+ *   2. onStartCommand() — service started, prepare for requests
+ *   3. onDestroy() — clean shutdown
  *
  * Design invariant: If this service fails, the phone still works as a phone.
  * We degrade gracefully, not catastrophically. Unlike my cooking.
  */
-class AgentCoreService(context: Context) {
+class AgentCoreService : Service() {
 
     companion object {
         private const val TAG = "AgentCoreService"
         const val SERVICE_NAME = "agent_core"
-
-        // Boot Phase Constants (from SystemService)
-        const val PHASE_SYSTEM_SERVICES_READY = 500
-        const val PHASE_ACTIVITY_MANAGER_READY = 550
-        const val PHASE_THIRD_PARTY_APPS_READY = 600
-        const val PHASE_BOOT_COMPLETED = 1000
     }
 
     // === Core Components ===
@@ -66,11 +61,13 @@ class AgentCoreService(context: Context) {
     private var state: AgentState = AgentState.STARTING
     private var ownerProfile: UserProfile? = null
 
+    // === Event Listeners (IPC callbacks) ===
+    private val eventListeners = RemoteCallbackList<IAgentEventListener>()
+
     // === Coroutine Scope (dies with the service) ===
     private val serviceScope = CoroutineScope(
         SupervisorJob() + Dispatchers.Default + CoroutineExceptionHandler { _, throwable ->
             Slog.e(TAG, "Uncaught exception in agent coroutine", throwable)
-            // Don't crash system_server. Ever. EVER.
         }
     )
 

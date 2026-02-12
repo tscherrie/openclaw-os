@@ -25,6 +25,7 @@ android_app {
     
     // Dependencies
     static_libs: [
+        "CloudBridge",
         "kotlinx-coroutines-android",
         "kotlinx-coroutines-core",
     ],
