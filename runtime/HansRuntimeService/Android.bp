@@ -1,0 +1,70 @@
+android_app {
+    name: "HansRuntimeService",
+    srcs: [
+        "src/main/java/**/*.java",
+    ],
+    manifest: "src/main/AndroidManifest.xml",
+    platform_apis: true,
+    min_sdk_version: "35",
+    target_sdk_version: "35",
+    privileged: true,
+    system_ext_specific: true,
+    certificate: "platform",
+    static_libs: [
+        "hansos-agent-protocol",
+        "hansos-fakes",
+    ],
+    required: [
+        "privapp-permissions-ai.hansos.runtime.xml",
+    ],
+}
+
+android_app {
+    name: "HansRuntimeServiceSystem",
+    srcs: [
+        "src/main/java/**/*.java",
+    ],
+    manifest: "src/main/AndroidManifest.xml",
+    platform_apis: true,
+    min_sdk_version: "35",
+    target_sdk_version: "35",
+    privileged: true,
+    certificate: "platform",
+    static_libs: [
+        "hansos-agent-protocol",
+        "hansos-fakes",
+    ],
+    required: [
+        "privapp-permissions-ai.hansos.runtime.system.xml",
+    ],
+}
+
+android_app {
+    name: "HansRuntimeServiceMp01",
+    srcs: [
+        "src/main/java/**/*.java",
+    ],
+    manifest: "src/mp01/AndroidManifest.xml",
+    platform_apis: true,
+    min_sdk_version: "35",
+    target_sdk_version: "35",
+    privileged: true,
+    certificate: "platform",
+    static_libs: [
+        "hansos-agent-protocol",
+        "hansos-fakes",
+    ],
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-ai.hansos.runtime.xml",
+    src: "privapp-permissions-ai.hansos.runtime.xml",
+    system_ext_specific: true,
+    sub_dir: "permissions",
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-ai.hansos.runtime.system.xml",
+    src: "privapp-permissions-ai.hansos.runtime.xml",
+    sub_dir: "permissions",
+}

@@ -1,0 +1,82 @@
+android_app {
+    name: "HansCanvas",
+    srcs: [
+        "src/main/java/**/*.java",
+    ],
+    manifest: "src/main/AndroidManifest.xml",
+    resource_dirs: ["src/main/res"],
+    platform_apis: true,
+    min_sdk_version: "35",
+    target_sdk_version: "35",
+    privileged: true,
+    system_ext_specific: true,
+    certificate: "platform",
+    static_libs: [
+        "hansos-agent-protocol",
+    ],
+    overrides: [
+        "Launcher3",
+        "Launcher3QuickStep",
+        "LineageSetupWizard",
+        "Provision",
+    ],
+    required: [
+        "privapp-permissions-ai.hansos.canvas.xml",
+    ],
+}
+
+android_app {
+    name: "HansCanvasSystem",
+    srcs: [
+        "src/main/java/**/*.java",
+    ],
+    manifest: "src/main/AndroidManifest.xml",
+    resource_dirs: ["src/main/res"],
+    platform_apis: true,
+    min_sdk_version: "35",
+    target_sdk_version: "35",
+    privileged: true,
+    certificate: "platform",
+    static_libs: [
+        "hansos-agent-protocol",
+    ],
+    overrides: [
+        "Launcher3",
+        "Launcher3QuickStep",
+        "LineageSetupWizard",
+        "Provision",
+    ],
+    required: [
+        "privapp-permissions-ai.hansos.canvas.system.xml",
+    ],
+}
+
+android_app {
+    name: "HansCanvasMp01",
+    srcs: [
+        "src/main/java/**/*.java",
+    ],
+    manifest: "src/mp01/AndroidManifest.xml",
+    resource_dirs: ["src/main/res"],
+    platform_apis: true,
+    min_sdk_version: "35",
+    target_sdk_version: "35",
+    privileged: true,
+    certificate: "platform",
+    static_libs: [
+        "hansos-agent-protocol",
+    ],
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-ai.hansos.canvas.xml",
+    src: "privapp-permissions-ai.hansos.canvas.xml",
+    system_ext_specific: true,
+    sub_dir: "permissions",
+}
+
+prebuilt_etc {
+    name: "privapp-permissions-ai.hansos.canvas.system.xml",
+    src: "privapp-permissions-ai.hansos.canvas.xml",
+    sub_dir: "permissions",
+}

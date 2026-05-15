@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="ai.hansos.canvas">
+
+    <application
+        android:directBootAware="true"
+        android:label="Hans"
+        android:theme="@style/HansCanvasTheme">
+        <activity
+            android:name=".HansCanvasActivity"
+            android:clearTaskOnLaunch="true"
+            android:directBootAware="true"
+            android:exported="true"
+            android:launchMode="singleTask"
+            android:screenOrientation="portrait">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.HOME" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

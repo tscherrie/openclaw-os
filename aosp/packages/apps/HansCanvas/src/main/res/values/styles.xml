@@ -1,0 +1,10 @@
+<resources>
+    <style name="HansCanvasTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/hans_background</item>
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">@color/hans_accent</item>
+        <item name="android:navigationBarColor">@color/hans_background</item>
+        <item name="android:statusBarColor">@color/hans_background</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>

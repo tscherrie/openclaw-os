@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<permissions>
+    <privapp-permissions package="ai.hansos.canvas">
+        <permission name="android.permission.QUERY_ALL_PACKAGES"/>
+    </privapp-permissions>
+</permissions>

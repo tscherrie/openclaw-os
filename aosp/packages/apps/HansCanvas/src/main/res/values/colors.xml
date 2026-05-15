@@ -1,0 +1,7 @@
+<resources>
+    <color name="hans_background">#050508</color>
+    <color name="hans_surface">#15151C</color>
+    <color name="hans_text_primary">#F5F3EA</color>
+    <color name="hans_text_secondary">#AAA7B8</color>
+    <color name="hans_accent">#6EE7B7</color>
+</resources>

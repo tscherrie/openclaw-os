@@ -1,0 +1,7 @@
+java_library_static {
+    name: "hansos-fakes",
+    srcs: [
+        "src/**/*.java",
+    ],
+    platform_apis: true,
+}

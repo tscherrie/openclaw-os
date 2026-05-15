@@ -1,0 +1,28 @@
+# Build outputs
+out/
+dist/
+logs/
+.gradle/
+build/
+.work/
+tmp/
+.playwright-mcp/
+.pytest_cache/
+__pycache__/
+*.pyc
+hansos-webrtc-*.png
+
+# Local AOSP checkouts and tools
+android-latest-release/
+.repo/
+
+# Local secrets
+*.env
+*.local
+openai.key
+hansos-secrets.json
+
+# Editor noise
+.DS_Store
+.idea/
+.vscode/
