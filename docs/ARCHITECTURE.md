@@ -7,6 +7,37 @@ Launcher3. Hans has high autonomy, local rules, local memory, and local audit.
 Classic app UI can appear temporarily when Hans needs to operate an app, but the
 system always returns to Canvas.
 
+## Voice-First UX Direction
+
+HansOS v1 is not a small touch-first Android launcher. The intended default
+interaction model is closer to a dictation recorder:
+
+- The primary input is push-to-talk through the MP01 middle side button between
+  the volume keys.
+- Holding the button starts listening; releasing it ends the user turn and sends
+  the captured speech to Hans.
+- The display is primarily a status and visualization surface, not a control
+  surface.
+- Touch is reserved for setup, PIN/password entry, SIM/network configuration,
+  recovery, emergency fallback, and explicitly delegated app surfaces that must
+  be seen.
+
+In normal operation, HansCanvas should render one centered live phrase area on a
+black background:
+
+- While the user speaks, the current transcript streams into the center of the
+  display in bold white text.
+- Only the current user input is shown; it remains visible until Hans starts
+  answering.
+- As Hans answers, the agent response replaces the user transcript and streams
+  into the same centered bold white text area.
+- The latest agent response remains centered until replaced by a new user input
+  or by a visual artifact such as a photo, map, app view, warning, or setup
+  screen.
+
+Buttons, quick actions, text fields, and chat-history UI are developer or
+fallback affordances. They must not be part of the v1 default user-facing mode.
+
 ## Process Split
 
 HansOS intentionally splits authority from risky runtime work.
