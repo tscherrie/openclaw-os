@@ -55,7 +55,8 @@ SystemServer
 Privileged app process
   HansRuntimeService
     - OpenAI provider integration
-    - voice provider integration
+    - push-to-talk audio transcription
+    - MP01 system provider adapters
     - Cuttlefish fake daily-phone providers
     - tool execution adapters
     - streaming event production
@@ -86,14 +87,16 @@ with typed parcelables.
 ## State Model
 
 Hans starts in `STARTING`, reaches `IDLE`, then transitions through
-`THINKING`, `ACTING`, `SPEAKING`, or `ERROR`. `STOPPED` is reserved for
-emergency stop. State constants are mirrored in Java for AOSP clients.
+`LISTENING`, `TRANSCRIBING`, `THINKING`, `ACTING`, `SPEAKING`, or `ERROR`.
+`STOPPED` is reserved for emergency stop. State constants are mirrored in Java
+for AOSP clients.
 
 ## Alpha Flow Strategy
 
-Daily-phone APIs are represented by real Android-facing interfaces and
-Cuttlefish fake implementations. This lets the first alpha prove phone flows
-without waiting for Pixel hardware.
+Daily-phone APIs are represented by real Android-facing adapters plus
+Cuttlefish fake implementations. Cuttlefish keeps deterministic fake data for
+repeatable build/smoke gates. MP01 can switch to
+`persist.hansos.context_provider=real` to use live phone state.
 
 The fake layer covers:
 
@@ -102,3 +105,17 @@ The fake layer covers:
 - Calendar
 - Notifications
 - App-control fixtures
+
+The MP01 system-provider layer covers:
+
+- Battery and charging state.
+- Active network transport and validation.
+- SIM/operator state.
+- Calendar instances for the current day.
+- NotificationListener-backed notification snapshots.
+- Focus mode through notification interruption/zen-mode APIs.
+- Temporary Settings app launch for explicit app-control flows.
+
+Sensitive intents such as calls, SMS, password/PIN handling, destructive
+deletes, bootloader unlock, or flash operations must emit
+`confirmation_required` plus `manual_mode_required` and stop before action.

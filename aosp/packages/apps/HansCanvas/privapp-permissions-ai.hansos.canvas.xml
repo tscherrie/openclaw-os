@@ -2,5 +2,8 @@
 <permissions>
     <privapp-permissions package="ai.hansos.canvas">
         <permission name="android.permission.QUERY_ALL_PACKAGES"/>
+        <permission name="android.permission.RECORD_AUDIO"/>
+        <permission name="android.permission.MODIFY_AUDIO_SETTINGS"/>
+        <permission name="android.permission.WAKE_LOCK"/>
     </privapp-permissions>
 </permissions>

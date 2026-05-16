@@ -4,16 +4,34 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.READ_CALENDAR" />
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+    <uses-permission android:name="android.permission.WRITE_SECURE_SETTINGS" />
 
     <application
         android:directBootAware="true"
-        android:label="Hans Runtime">
+        android:networkSecurityConfig="@xml/hans_runtime_network_security"
+        android:label="Hans Runtime"
+        android:usesCleartextTraffic="true">
         <service
             android:name=".HansRuntimeService"
             android:directBootAware="true"
             android:exported="true" />
+
+        <service
+            android:name=".HansNotificationListenerService"
+            android:directBootAware="true"
+            android:exported="true"
+            android:label="Hans Notifications"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <receiver
             android:name=".HansRuntimeBootReceiver"

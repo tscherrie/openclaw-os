@@ -75,7 +75,8 @@ resolve_adb() {
 usage() {
   cat <<'USAGE'
 usage: hans-openai-byok.sh [--serial SERIAL] [--connect SERIAL]
-                           [--model MODEL] [--prompt TEXT]
+                           [--model MODEL] [--prompt TEXT] [--base-url URL]
+                           [--transcription-model MODEL]
                            <configure|clear|test>
 
 commands:
@@ -93,6 +94,8 @@ SERIAL="${HANSOS_ADB_SERIAL:-${ANDROID_SERIAL:-}}"
 CONNECT_SERIAL="${HANSOS_ADB_CONNECT:-}"
 ADB_CALL_TIMEOUT="${HANSOS_ADB_TIMEOUT_SECONDS:-30}"
 MODEL="${HANSOS_OPENAI_MODEL:-gpt-5.4-mini}"
+TRANSCRIPTION_MODEL="${HANSOS_OPENAI_TRANSCRIPTION_MODEL:-gpt-4o-mini-transcribe}"
+BASE_URL="${HANSOS_OPENAI_BASE_URL:-}"
 PROMPT="${HANSOS_OPENAI_TEST_PROMPT:-HansOS OpenAI BYOK smoke. Answer with one short sentence.}"
 COMMAND=""
 CHUNK_SIZE=80
@@ -113,8 +116,16 @@ while [[ $# -gt 0 ]]; do
       MODEL="$2"
       shift 2
       ;;
+    --transcription-model)
+      TRANSCRIPTION_MODEL="$2"
+      shift 2
+      ;;
     --prompt)
       PROMPT="$2"
+      shift 2
+      ;;
+    --base-url)
+      BASE_URL="$2"
       shift 2
       ;;
     configure|clear|test)
@@ -187,6 +198,12 @@ prop_to_setting() {
       ;;
     persist.hansos.openai_model)
       echo "hansos_openai_model"
+      ;;
+    persist.hansos.openai_transcription_model)
+      echo "hansos_openai_transcription_model"
+      ;;
+    persist.hansos.openai_base_url)
+      echo "hansos_openai_base_url"
       ;;
     *)
       return 1
@@ -299,6 +316,10 @@ configure_byok() {
     index=$((index + 1))
   done
   set_hans_config persist.hansos.openai_model "${MODEL}"
+  set_hans_config persist.hansos.openai_transcription_model "${TRANSCRIPTION_MODEL}"
+  if [[ -n "${BASE_URL}" ]]; then
+    set_hans_config persist.hansos.openai_base_url "${BASE_URL}"
+  fi
   set_hans_config persist.hansos.provider openai
   adb_cmd shell pm enable ai.hansos.runtime >/dev/null 2>&1 || true
   adb_cmd shell am startservice -n ai.hansos.runtime/.HansRuntimeService >/dev/null
@@ -309,6 +330,8 @@ clear_byok() {
   set_hans_config persist.hansos.provider fake
   set_hans_config persist.hansos.openai_key ""
   set_hans_config persist.hansos.openai_key_parts 0
+  set_hans_config persist.hansos.openai_transcription_model ""
+  set_hans_config persist.hansos.openai_base_url ""
   local index=1
   while [[ "${index}" -le "${MAX_PARTS}" ]]; do
     set_hans_config "persist.hansos.openai_key_part${index}" ""

@@ -53,6 +53,26 @@ public final class HansManagerService extends SystemService {
         }
 
         @Override
+        public String startVoiceSession(IHansStreamCallback callback) {
+            return HansManagerService.this.startVoiceSession(callback);
+        }
+
+        @Override
+        public void appendVoiceAudio(String sessionId, byte[] pcm16MonoChunk) {
+            HansManagerService.this.appendVoiceAudio(sessionId, pcm16MonoChunk);
+        }
+
+        @Override
+        public void finishVoiceSession(String sessionId) {
+            HansManagerService.this.finishVoiceSession(sessionId);
+        }
+
+        @Override
+        public void cancelVoiceSession(String sessionId) {
+            HansManagerService.this.cancelVoiceSession(sessionId);
+        }
+
+        @Override
         public void registerRuntime(IHansRuntime runtime) {
             if (runtime == null) {
                 Slog.w(TAG, "Ignoring null runtime registration");
@@ -169,6 +189,93 @@ public final class HansManagerService extends SystemService {
         }
     }
 
+    private String startVoiceSession(IHansStreamCallback callback) {
+        String requestId = UUID.randomUUID().toString();
+        IHansRuntime runtime;
+        synchronized (mLock) {
+            runtime = mRuntime;
+            mAgentState = HansAgentStates.LISTENING;
+        }
+
+        if (runtime == null) {
+            emit(requestId, callback, HansEventTypes.ERROR, "Hans runtime is unavailable for voice");
+            emit(requestId, callback, HansEventTypes.REPAIR_SUGGESTION, "Use setup or restart HansRuntimeService");
+            audit("voice_start_failed", "runtime missing", false);
+            synchronized (mLock) {
+                mAgentState = HansAgentStates.ERROR;
+            }
+            return requestId;
+        }
+
+        try {
+            String runtimeSessionId = runtime.startVoiceSession(new ManagerStreamCallback(callback, "voice"));
+            audit("voice_start", runtimeSessionId, true);
+            return runtimeSessionId;
+        } catch (RemoteException e) {
+            emit(requestId, callback, HansEventTypes.ERROR, "Voice session failed: " + e.getMessage());
+            audit("voice_start_failed", e.toString(), false);
+            synchronized (mLock) {
+                mAgentState = HansAgentStates.ERROR;
+            }
+            return requestId;
+        }
+    }
+
+    private void appendVoiceAudio(String sessionId, byte[] pcm16MonoChunk) {
+        IHansRuntime runtime;
+        synchronized (mLock) {
+            runtime = mRuntime;
+        }
+        if (runtime == null) {
+            audit("voice_audio_dropped", "runtime missing", false);
+            return;
+        }
+        try {
+            runtime.appendVoiceAudio(sessionId, pcm16MonoChunk);
+        } catch (RemoteException e) {
+            audit("voice_audio_failed", e.toString(), false);
+            setState(HansAgentStates.ERROR);
+        }
+    }
+
+    private void finishVoiceSession(String sessionId) {
+        IHansRuntime runtime;
+        synchronized (mLock) {
+            runtime = mRuntime;
+            mAgentState = HansAgentStates.TRANSCRIBING;
+        }
+        if (runtime == null) {
+            audit("voice_finish_failed", "runtime missing", false);
+            setState(HansAgentStates.ERROR);
+            return;
+        }
+        try {
+            runtime.finishVoiceSession(sessionId);
+            audit("voice_finish", sessionId, true);
+        } catch (RemoteException e) {
+            audit("voice_finish_failed", e.toString(), false);
+            setState(HansAgentStates.ERROR);
+        }
+    }
+
+    private void cancelVoiceSession(String sessionId) {
+        IHansRuntime runtime;
+        synchronized (mLock) {
+            runtime = mRuntime;
+            mAgentState = HansAgentStates.STOPPED;
+        }
+        if (runtime == null) {
+            audit("voice_cancel", "runtime missing", false);
+            return;
+        }
+        try {
+            runtime.cancelVoiceSession(sessionId);
+            audit("voice_cancel", sessionId, true);
+        } catch (RemoteException e) {
+            audit("voice_cancel_failed", e.toString(), false);
+        }
+    }
+
     private void emitLocalDegradedFlow(String requestId, String text, IHansStreamCallback callback) {
         emit(requestId, callback, HansEventTypes.THINKING, "Hans is running without runtime");
         emit(requestId, callback, HansEventTypes.PLAN, "Use degraded local fake response for: " + safe(text));
@@ -223,6 +330,17 @@ public final class HansManagerService extends SystemService {
                 pw.println(getMemorySnapshotJson());
                 return;
             }
+            if ("voice".equals(args[0])) {
+                CapturingCallback callback = new CapturingCallback();
+                String sessionId = startVoiceSession(callback);
+                finishVoiceSession(sessionId);
+                callback.awaitDone();
+                pw.println("sessionId=" + sessionId);
+                for (String event : callback.events) {
+                    pw.println(event);
+                }
+                return;
+            }
         }
 
         synchronized (mLock) {
@@ -233,6 +351,7 @@ public final class HansManagerService extends SystemService {
         }
         pw.println("Commands:");
         pw.println("  dumpsys hans submit <text>");
+        pw.println("  dumpsys hans voice");
         pw.println("  dumpsys hans stop");
         pw.println("  dumpsys hans memory");
     }
@@ -290,10 +409,18 @@ public final class HansManagerService extends SystemService {
             String type = event.optString("type", "");
             String message = event.optString("message", "");
 
-            if (HansEventTypes.THINKING.equals(type) || HansEventTypes.PLAN.equals(type)) {
+            if (HansEventTypes.LISTENING_STARTED.equals(type)) {
+                setState(HansAgentStates.LISTENING);
+            } else if (HansEventTypes.LISTENING_FINISHED.equals(type)
+                    || HansEventTypes.TRANSCRIPT_PARTIAL.equals(type)
+                    || HansEventTypes.TRANSCRIPT_FINAL.equals(type)) {
+                setState(HansAgentStates.TRANSCRIBING);
+            } else if (HansEventTypes.THINKING.equals(type) || HansEventTypes.PLAN.equals(type)) {
                 setState(HansAgentStates.THINKING);
-            } else if (HansEventTypes.SPEECH.equals(type)) {
+            } else if (HansEventTypes.SPEAKING_STARTED.equals(type) || HansEventTypes.SPEECH.equals(type)) {
                 setState(HansAgentStates.SPEAKING);
+            } else if (HansEventTypes.SPEAKING_FINISHED.equals(type)) {
+                setState(HansAgentStates.IDLE);
             } else if (HansEventTypes.ACTION_STARTED.equals(type)
                     || HansEventTypes.APP_CONTROL_STARTED.equals(type)) {
                 setState(HansAgentStates.ACTING);

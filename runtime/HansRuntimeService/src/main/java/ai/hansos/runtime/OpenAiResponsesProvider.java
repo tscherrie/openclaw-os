@@ -11,12 +11,14 @@ import org.json.JSONException;
 import org.json.JSONObject;
 
 import java.io.BufferedReader;
+import java.io.ByteArrayOutputStream;
 import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.HttpURLConnection;
+import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 
@@ -28,18 +30,25 @@ final class OpenAiResponsesProvider {
     }
 
     private static final String TAG = "HansOpenAI";
-    private static final String API_URL = "https://api.openai.com/v1/responses";
+    private static final String DEFAULT_API_BASE_URL = "https://api.openai.com/v1";
+    private static final String RESPONSES_ENDPOINT = "responses";
+    private static final String AUDIO_TRANSCRIPTIONS_ENDPOINT = "audio/transcriptions";
     private static final String KEY_PROP = "persist.hansos.openai_key";
     private static final String KEY_PART_COUNT_PROP = "persist.hansos.openai_key_parts";
     private static final String KEY_PART_PROP_PREFIX = "persist.hansos.openai_key_part";
     private static final String KEY_FILE_PROP = "persist.hansos.openai_key_file";
     private static final String MODEL_PROP = "persist.hansos.openai_model";
+    private static final String TRANSCRIPTION_MODEL_PROP = "persist.hansos.openai_transcription_model";
+    private static final String BASE_URL_PROP = "persist.hansos.openai_base_url";
     private static final String KEY_SETTING = "hansos_openai_key";
     private static final String KEY_PART_COUNT_SETTING = "hansos_openai_key_parts";
     private static final String KEY_PART_SETTING_PREFIX = "hansos_openai_key_part";
     private static final String KEY_FILE_SETTING = "hansos_openai_key_file";
     private static final String MODEL_SETTING = "hansos_openai_model";
+    private static final String TRANSCRIPTION_MODEL_SETTING = "hansos_openai_transcription_model";
+    private static final String BASE_URL_SETTING = "hansos_openai_base_url";
     private static final String DEFAULT_MODEL = "gpt-5.4-mini";
+    private static final String DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
     private static final int MAX_KEY_PARTS = 8;
     private final ContentResolver mResolver;
 
@@ -73,6 +82,58 @@ final class OpenAiResponsesProvider {
         return model.isEmpty() ? DEFAULT_MODEL : model;
     }
 
+    String getTranscriptionModel() {
+        String model = SystemProperties.get(TRANSCRIPTION_MODEL_PROP, "").trim();
+        if (!model.isEmpty()) {
+            return model;
+        }
+        model = getGlobalString(TRANSCRIPTION_MODEL_SETTING);
+        return model.isEmpty() ? DEFAULT_TRANSCRIPTION_MODEL : model;
+    }
+
+    String transcribePcm16Mono(byte[] pcm16Mono, int sampleRate)
+            throws OpenAiException, IOException {
+        if (pcm16Mono == null || pcm16Mono.length == 0) {
+            return "";
+        }
+        String key = getApiKey();
+        if (key.isEmpty()) {
+            throw new OpenAiException("OpenAI BYOK key fehlt fuer Voice-Transkription.",
+                    "Setze persist.hansos.openai_key(_parts), hansos_openai_key(_parts) oder eine BYOK-Key-Datei.");
+        }
+
+        String boundary = "HansOSBoundary" + System.currentTimeMillis();
+        HttpURLConnection connection = (HttpURLConnection)
+                buildEndpointUrl(AUDIO_TRANSCRIPTIONS_ENDPOINT).openConnection();
+        connection.setConnectTimeout(15_000);
+        connection.setReadTimeout(90_000);
+        connection.setRequestMethod("POST");
+        connection.setDoOutput(true);
+        connection.setRequestProperty("Authorization", "Bearer " + key);
+        connection.setRequestProperty("Content-Type", "multipart/form-data; boundary=" + boundary);
+
+        byte[] wav = buildPcm16Wav(pcm16Mono, sampleRate);
+        try (OutputStream output = connection.getOutputStream()) {
+            writeFormField(output, boundary, "model", getTranscriptionModel());
+            writeFormField(output, boundary, "response_format", "json");
+            writeFileField(output, boundary, "file", "hans-voice.wav", "audio/wav", wav);
+            output.write(("--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
+        }
+
+        int code = connection.getResponseCode();
+        if (code < 200 || code >= 300) {
+            throw new OpenAiException(buildHttpError(code, connection),
+                    repairSuggestionForHttp(code));
+        }
+        String body = readBody(connection.getInputStream(), 2048);
+        connection.disconnect();
+        try {
+            return new JSONObject(body).optString("text", "").trim();
+        } catch (JSONException e) {
+            throw new IOException("Could not parse OpenAI transcription response", e);
+        }
+    }
+
     void streamResponse(String userText, EventSink sink) throws OpenAiException, IOException {
         String key = getApiKey();
         if (key.isEmpty()) {
@@ -80,7 +141,8 @@ final class OpenAiResponsesProvider {
                     "Setze persist.hansos.openai_key(_parts), hansos_openai_key(_parts) oder eine BYOK-Key-Datei und starte HansRuntimeService neu.");
         }
 
-        HttpURLConnection connection = (HttpURLConnection) new URL(API_URL).openConnection();
+        HttpURLConnection connection = (HttpURLConnection)
+                buildEndpointUrl(RESPONSES_ENDPOINT).openConnection();
         connection.setConnectTimeout(15_000);
         connection.setReadTimeout(60_000);
         connection.setRequestMethod("POST");
@@ -132,6 +194,41 @@ final class OpenAiResponsesProvider {
         }
     }
 
+    private URL buildEndpointUrl(String endpoint) throws OpenAiException {
+        String baseUrl = SystemProperties.get(BASE_URL_PROP, "").trim();
+        if (baseUrl.isEmpty()) {
+            baseUrl = getGlobalString(BASE_URL_SETTING);
+        }
+        if (baseUrl.isEmpty()) {
+            baseUrl = DEFAULT_API_BASE_URL;
+        }
+        while (baseUrl.endsWith("/")) {
+            baseUrl = baseUrl.substring(0, baseUrl.length() - 1);
+        }
+        String path = endpoint.startsWith("/") ? endpoint : "/" + endpoint;
+        try {
+            URL url = new URL(baseUrl + path);
+            enforceCleartextLoopbackOnly(url);
+            return url;
+        } catch (MalformedURLException e) {
+            throw new OpenAiException("OpenAI base URL ist ungueltig: " + baseUrl,
+                    "Pruefe persist.hansos.openai_base_url oder hansos_openai_base_url.");
+        }
+    }
+
+    private void enforceCleartextLoopbackOnly(URL url) throws OpenAiException {
+        if (!"http".equalsIgnoreCase(url.getProtocol())) {
+            return;
+        }
+        String host = url.getHost();
+        if ("localhost".equalsIgnoreCase(host) || "127.0.0.1".equals(host)
+                || "::1".equals(host) || host.startsWith("127.")) {
+            return;
+        }
+        throw new OpenAiException("OpenAI base URL darf HTTP nur fuer Loopback nutzen: " + host,
+                "Nutze https://... oder den lokalen adb-reverse Proxy auf 127.0.0.1.");
+    }
+
     private void handleSseData(String data, EventSink sink) {
         if (data.isEmpty() || "[DONE]".equals(data)) {
             return;
@@ -177,11 +274,15 @@ final class OpenAiResponsesProvider {
         if (stream == null) {
             return "";
         }
+        return readBody(stream, 500);
+    }
+
+    private String readBody(InputStream stream, int maxChars) {
         try (BufferedReader reader = new BufferedReader(
                 new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             StringBuilder builder = new StringBuilder();
             String line;
-            while ((line = reader.readLine()) != null && builder.length() < 500) {
+            while ((line = reader.readLine()) != null && builder.length() < maxChars) {
                 if (builder.length() > 0) {
                     builder.append(' ');
                 }
@@ -191,6 +292,63 @@ final class OpenAiResponsesProvider {
         } catch (IOException e) {
             return "";
         }
+    }
+
+    private static byte[] buildPcm16Wav(byte[] pcm16, int sampleRate) throws IOException {
+        int byteRate = sampleRate * 2;
+        int dataSize = pcm16.length;
+        ByteArrayOutputStream out = new ByteArrayOutputStream(44 + dataSize);
+        writeAscii(out, "RIFF");
+        writeIntLe(out, 36 + dataSize);
+        writeAscii(out, "WAVE");
+        writeAscii(out, "fmt ");
+        writeIntLe(out, 16);
+        writeShortLe(out, 1);
+        writeShortLe(out, 1);
+        writeIntLe(out, sampleRate);
+        writeIntLe(out, byteRate);
+        writeShortLe(out, 2);
+        writeShortLe(out, 16);
+        writeAscii(out, "data");
+        writeIntLe(out, dataSize);
+        out.write(pcm16);
+        return out.toByteArray();
+    }
+
+    private static void writeFormField(OutputStream output, String boundary, String name, String value)
+            throws IOException {
+        output.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+        output.write(("Content-Disposition: form-data; name=\"" + name + "\"\r\n\r\n")
+                .getBytes(StandardCharsets.UTF_8));
+        output.write((value == null ? "" : value).getBytes(StandardCharsets.UTF_8));
+        output.write("\r\n".getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static void writeFileField(OutputStream output, String boundary, String name,
+            String filename, String contentType, byte[] content) throws IOException {
+        output.write(("--" + boundary + "\r\n").getBytes(StandardCharsets.UTF_8));
+        output.write(("Content-Disposition: form-data; name=\"" + name
+                + "\"; filename=\"" + filename + "\"\r\n").getBytes(StandardCharsets.UTF_8));
+        output.write(("Content-Type: " + contentType + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
+        output.write(content);
+        output.write("\r\n".getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static void writeAscii(ByteArrayOutputStream out, String value) {
+        byte[] bytes = value.getBytes(StandardCharsets.US_ASCII);
+        out.write(bytes, 0, bytes.length);
+    }
+
+    private static void writeIntLe(ByteArrayOutputStream out, int value) {
+        out.write(value & 0xff);
+        out.write((value >> 8) & 0xff);
+        out.write((value >> 16) & 0xff);
+        out.write((value >> 24) & 0xff);
+    }
+
+    private static void writeShortLe(ByteArrayOutputStream out, int value) {
+        out.write(value & 0xff);
+        out.write((value >> 8) & 0xff);
     }
 
     private String getApiKey() {

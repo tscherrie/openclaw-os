@@ -203,11 +203,36 @@ wait_runtime() {
   return 1
 }
 
-set_optional_fake_provider() {
-  if adb_cmd shell setprop persist.hansos.provider fake >/dev/null 2>&1; then
+set_context_provider() {
+  local provider="$1"
+  local changed=false
+  if adb_cmd shell settings put global hansos_context_provider "${provider}" >/dev/null 2>&1; then
+    changed=true
+  fi
+  if adb_cmd shell setprop persist.hansos.context_provider "${provider}" >/dev/null 2>&1; then
+    changed=true
+  fi
+
+  local setting
+  local prop
+  setting="$(adb_cmd shell settings get global hansos_context_provider 2>/dev/null | tr -d '\r' || true)"
+  prop="$(adb_cmd shell getprop persist.hansos.context_provider 2>/dev/null | tr -d '\r' || true)"
+  if [[ "${setting}" == "${provider}" || "${prop}" == "${provider}" ]]; then
+    echo "  - context provider set to ${provider}"
     return 0
   fi
-  echo "  - persist.hansos.provider could not be set; continuing with built-in/default fake provider"
+
+  if [[ "${changed}" == "true" ]]; then
+    echo "Context provider write was accepted but could not be verified: setting=${setting}, prop=${prop}" >&2
+  else
+    echo "Context provider could not be changed: setting=${setting}, prop=${prop}" >&2
+  fi
+  return 1
+}
+
+clear_context_provider() {
+  adb_cmd shell settings delete global hansos_context_provider >/dev/null 2>&1 || true
+  adb_cmd shell setprop persist.hansos.context_provider "" >/dev/null 2>&1 || true
 }
 
 ensure_canvas_home() {
@@ -296,7 +321,7 @@ if [[ "${manager_boot_state}" != *"HansManagerService"* ]]; then
   exit 1
 fi
 
-set_optional_fake_provider
+set_context_provider fake
 adb_cmd shell am startservice -n ai.hansos.runtime/.HansRuntimeService >/dev/null
 adb_cmd shell am start -n ai.hansos.canvas/.HansCanvasActivity >/dev/null
 wait_runtime 45
@@ -322,13 +347,47 @@ run_flow "App Control flow" \
   "fake_settings.network" \
   "\"type\":\"done\""
 
+echo "HansOS MP01 real system-provider flows:"
+set_context_provider real
+adb_cmd shell am startservice -n ai.hansos.runtime/.HansRuntimeService >/dev/null
+wait_runtime 45
+
+run_flow "Real Command -> Action flow" \
+  "turn on focus mode" \
+  "\"type\":\"action_completed\"" \
+  "device_state.focus_mode=true" \
+  "device_context:" \
+  "\"type\":\"done\""
+
+run_flow "Real Morning Agent flow" \
+  "morgen briefing" \
+  "\"type\":\"speech\"" \
+  "calendar:" \
+  "notifications:" \
+  "device_context:" \
+  "\"type\":\"done\""
+
+run_flow "Real App Control flow" \
+  "open settings network" \
+  "\"type\":\"app_control_completed\"" \
+  "settings.network:" \
+  "\"type\":\"done\""
+
+clear_context_provider
+
 memory="$(adb_cmd shell dumpsys hans memory 2>/dev/null | tr -d '\r')"
 assert_contains "${memory}" "runtime_audit" "manager memory"
 
 adb_cmd shell dumpsys hans stop >/dev/null
 state="$(adb_cmd shell dumpsys hans 2>/dev/null | tr -d '\r')"
-assert_contains "${state}" "state=5" "emergency stop state"
+assert_contains "${state}" "state=7" "emergency stop state"
 echo "  - emergency stop reaches STOPPED"
+
+voice="$(adb_cmd shell dumpsys hans voice 2>/dev/null | tr -d '\r')"
+assert_contains "${voice}" "listening_started" "voice smoke"
+assert_contains "${voice}" "speaking_started" "voice smoke"
+assert_contains "${voice}" "Voice turn abgeschlossen" "voice smoke"
+echo "  - voice session smoke passes"
 
 if [[ "${INCLUDE_DEGRADED}" == "true" ]]; then
   test_degraded_runtime_missing

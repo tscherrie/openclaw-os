@@ -115,6 +115,17 @@ require_zip_dex_marker() {
   echo "  - ${label}: ${marker}"
 }
 
+require_text_marker() {
+  local file="$1"
+  local marker="$2"
+  local label="$3"
+  if ! grep -q "${marker}" "${file}"; then
+    echo "Missing ${label} in ${file}: ${marker}" >&2
+    exit 1
+  fi
+  echo "  - ${label}: ${marker}"
+}
+
 SYSTEM_IMG="${PRODUCT_OUT}/system.img"
 SYSTEM_DIR="${PRODUCT_OUT}/system"
 SERVICES_JAR="${SYSTEM_DIR}/framework/services.jar"
@@ -131,6 +142,20 @@ require_absent_path "${PRODUCT_OUT}/system_ext/priv-app/Provision" "Provision HO
 require_zip_entry "${SERVICES_JAR}" "classes.dex" "services dex payload"
 require_zip_dex_marker "${SERVICES_JAR}" "Lai/hansos/server/HansManagerService;" "HansManagerService dex marker"
 require_zip_dex_marker "${SERVICES_JAR}" "StartHansManagerService" "SystemServer Hans startup trace marker"
+require_zip_dex_marker "${SYSTEM_DIR}/priv-app/HansRuntimeServiceSystem/HansRuntimeServiceSystem.apk" \
+  "Lai/hansos/runtime/SystemPhoneProvider;" "SystemPhoneProvider dex marker"
+require_zip_dex_marker "${SYSTEM_DIR}/priv-app/HansRuntimeServiceSystem/HansRuntimeServiceSystem.apk" \
+  "HansNotificationListenerService" "notification listener dex marker"
+require_zip_dex_marker "${SYSTEM_DIR}/priv-app/HansRuntimeServiceSystem/HansRuntimeServiceSystem.apk" \
+  "audio/transcriptions" "OpenAI transcription dex marker"
+require_zip_dex_marker "${SYSTEM_DIR}/priv-app/HansCanvasSystem/HansCanvasSystem.apk" \
+  "Hans live phrase" "voice-first Canvas dex marker"
+require_text_marker "${SYSTEM_DIR}/etc/permissions/privapp-permissions-ai.hansos.runtime.system.xml" \
+  "WRITE_SECURE_SETTINGS" "runtime secure-settings permission"
+require_text_marker "${SYSTEM_DIR}/etc/permissions/privapp-permissions-ai.hansos.runtime.system.xml" \
+  "READ_PHONE_STATE" "runtime phone-state permission"
+require_text_marker "${SYSTEM_DIR}/etc/permissions/privapp-permissions-ai.hansos.canvas.system.xml" \
+  "RECORD_AUDIO" "canvas record-audio permission"
 
 if command -v sha256sum >/dev/null 2>&1; then
   sha256sum "${SYSTEM_IMG}" > "${PRODUCT_OUT}/system.img.sha256"

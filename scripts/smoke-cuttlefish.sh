@@ -239,6 +239,7 @@ fi
 
 adb_cmd shell am startservice -n ai.hansos.runtime/.HansRuntimeService >/dev/null
 adb_cmd shell am start -n ai.hansos.canvas/.HansCanvasActivity >/dev/null
+adb_cmd shell setprop persist.hansos.context_provider fake >/dev/null 2>&1 || true
 
 wait_runtime() {
   local timeout="${1:-30}"
@@ -280,13 +281,9 @@ test_canvas_bridge() {
 
   local ui
   ui="$(bridge_cmd dump 2>/dev/null | tr -d '\r')"
-  assert_contains "${ui}" "HansOS" "Canvas UI"
-  assert_contains "${ui}" "Hans quick focus" "Canvas UI"
-  assert_contains "${ui}" "Hans quick morning" "Canvas UI"
-  assert_contains "${ui}" "Hans quick settings" "Canvas UI"
-  assert_contains "${ui}" "Hans prompt input" "Canvas UI"
-  assert_contains "${ui}" "Hans send" "Canvas UI"
-  assert_contains "${ui}" "Hans stop" "Canvas UI"
+  assert_contains "${ui}" "Hans live phrase" "Canvas UI"
+  assert_contains "${ui}" "Hans voice status" "Canvas UI"
+  assert_contains "${ui}" "Seitentaste halten" "Canvas UI"
 
   bridge_cmd quick focus >/dev/null
   sleep 2
@@ -299,6 +296,12 @@ test_canvas_bridge() {
   sleep 2
   memory="$(adb_cmd shell dumpsys hans memory 2>/dev/null | tr -d '\r')"
   assert_contains "${memory}" "canvas bridge smoke" "Canvas submit"
+
+  local voice
+  voice="$(bridge_cmd voice 2>/dev/null | tr -d '\r')"
+  assert_contains "${voice}" "listening_started" "Canvas voice smoke"
+  assert_contains "${voice}" "speaking_started" "Canvas voice smoke"
+  assert_contains "${voice}" "Voice turn abgeschlossen" "Canvas voice smoke"
 
   bridge_cmd quick morning >/dev/null
   sleep 2
@@ -314,9 +317,10 @@ test_canvas_bridge() {
   sleep 1
   local state
   state="$(adb_cmd shell dumpsys hans 2>/dev/null | tr -d '\r')"
-  assert_contains "${state}" "state=5" "Canvas emergency stop"
-  echo "  - UI hierarchy exposes HansOS controls"
+  assert_contains "${state}" "state=7" "Canvas emergency stop"
+  echo "  - UI hierarchy exposes the voice-first live phrase surface"
   echo "  - developer intents drive Canvas quick actions and submit"
+  echo "  - developer bridge validates a headless Voice Session"
   echo "  - Canvas emergency stop reaches STOPPED"
 }
 
@@ -365,8 +369,15 @@ test_fake_flows_once() {
 
   adb_cmd shell dumpsys hans stop >/dev/null
   state="$(adb_cmd shell dumpsys hans 2>/dev/null | tr -d '\r')"
-  assert_contains "${state}" "state=5" "emergency stop state"
+  assert_contains "${state}" "state=7" "emergency stop state"
   echo "  - emergency stop reaches STOPPED"
+
+  local voice
+  voice="$(adb_cmd shell dumpsys hans voice 2>/dev/null | tr -d '\r')"
+  assert_contains "${voice}" "listening_started" "voice smoke"
+  assert_contains "${voice}" "speaking_started" "voice smoke"
+  assert_contains "${voice}" "Voice turn abgeschlossen" "voice smoke"
+  echo "  - voice session smoke passes"
 }
 
 test_degraded_runtime_missing() {

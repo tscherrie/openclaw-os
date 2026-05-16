@@ -1,42 +1,46 @@
 package ai.hansos.canvas;
 
+import android.Manifest;
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 import android.graphics.Color;
 import android.graphics.Typeface;
-import android.graphics.drawable.GradientDrawable;
+import android.media.AudioFormat;
+import android.media.AudioRecord;
+import android.media.MediaRecorder;
 import android.os.Bundle;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.SystemProperties;
-import android.text.InputType;
 import android.view.Gravity;
-import android.view.inputmethod.EditorInfo;
+import android.view.KeyEvent;
 import android.view.ViewGroup;
-import android.widget.Button;
-import android.widget.EditText;
 import android.widget.LinearLayout;
-import android.widget.ScrollView;
 import android.widget.TextView;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 
+import java.util.Arrays;
+
+import ai.hansos.agent.HansEventTypes;
 import ai.hansos.agent.IHansManager;
 import ai.hansos.agent.IHansStreamCallback;
 
 public final class HansCanvasActivity extends Activity {
-    private static final int BG = Color.rgb(8, 9, 12);
-    private static final int SURFACE = Color.rgb(23, 25, 32);
-    private static final int SURFACE_ALT = Color.rgb(31, 34, 43);
-    private static final int TEXT = Color.rgb(245, 243, 234);
-    private static final int MUTED = Color.rgb(165, 169, 182);
+    private static final int BG = Color.BLACK;
+    private static final int TEXT = Color.WHITE;
+    private static final int MUTED = Color.rgb(145, 149, 160);
     private static final int ACCENT = Color.rgb(110, 231, 183);
-    private static final int BLUE = Color.rgb(125, 184, 255);
     private static final int AMBER = Color.rgb(245, 190, 91);
     private static final int ROSE = Color.rgb(250, 112, 136);
-    private static final int LINE = Color.rgb(58, 62, 75);
+    private static final int BLUE = Color.rgb(125, 184, 255);
+
+    private static final int SAMPLE_RATE = 16000;
+    private static final int AUDIO_PERMISSION_REQUEST = 10;
     private static final String PROVIDER_PROP = "persist.hansos.provider";
+    private static final String PTT_KEY_PROP = "persist.hansos.ptt_keycode";
     private static final String ACTION_SUBMIT = "ai.hansos.canvas.action.SUBMIT";
     private static final String ACTION_QUICK = "ai.hansos.canvas.action.QUICK";
     private static final String ACTION_STOP = "ai.hansos.canvas.action.STOP";
@@ -44,22 +48,23 @@ public final class HansCanvasActivity extends Activity {
     private static final String EXTRA_PROMPT = "ai.hansos.canvas.extra.PROMPT";
     private static final String EXTRA_QUICK = "ai.hansos.canvas.extra.QUICK";
 
-    private LinearLayout mCards;
-    private EditText mInput;
-    private ScrollView mScroll;
-    private TextView mConnection;
-    private TextView mStatePill;
-    private TextView mStatusLine;
-    private TextView mStreamingSpeechView;
-    private StringBuilder mStreamingSpeech;
-    private Button mRetry;
+    private TextView mMode;
+    private TextView mPhrase;
+    private TextView mStatus;
+    private TextView mFooter;
     private IHansManager mHans;
     private String mLastPrompt = "";
+    private String mVoiceSessionId;
+    private AudioRecord mRecorder;
+    private Thread mAudioThread;
+    private volatile boolean mRecording;
+    private StringBuilder mAgentSpeech = new StringBuilder();
+    private String mActivePhraseOwner = "";
 
     private final IHansStreamCallback.Stub mCallback = new IHansStreamCallback.Stub() {
         @Override
         public void onEvent(String requestId, String eventJson) {
-            runOnUiThread(() -> addEventCard(eventJson));
+            runOnUiThread(() -> handleHansEvent(eventJson));
         }
     };
 
@@ -68,7 +73,7 @@ public final class HansCanvasActivity extends Activity {
         super.onCreate(bundle);
         bindHans();
         setContentView(buildUi());
-        addSystemCard("Hans ist wach.");
+        showIdle();
         handleDeveloperIntent(getIntent());
     }
 
@@ -79,6 +84,44 @@ public final class HansCanvasActivity extends Activity {
         handleDeveloperIntent(intent);
     }
 
+    @Override
+    protected void onDestroy() {
+        stopAudioCapture(false);
+        super.onDestroy();
+    }
+
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+        if (isPushToTalkKey(keyCode)) {
+            if (event == null || event.getRepeatCount() == 0) {
+                startVoiceTurn();
+            }
+            return true;
+        }
+        return super.onKeyDown(keyCode, event);
+    }
+
+    @Override
+    public boolean onKeyUp(int keyCode, KeyEvent event) {
+        if (isPushToTalkKey(keyCode)) {
+            finishVoiceTurn();
+            return true;
+        }
+        return super.onKeyUp(keyCode, event);
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+        if (requestCode == AUDIO_PERMISSION_REQUEST
+                && grantResults.length > 0
+                && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+            startVoiceTurn();
+        } else if (requestCode == AUDIO_PERMISSION_REQUEST) {
+            showManualRequired("Mikrofonzugriff fehlt.");
+        }
+    }
+
     private void bindHans() {
         mHans = IHansManager.Stub.asInterface(ServiceManager.getService("hans"));
     }
@@ -86,183 +129,181 @@ public final class HansCanvasActivity extends Activity {
     private LinearLayout buildUi() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setPadding(dp(10), dp(8), dp(10), dp(8));
+        root.setPadding(dp(18), dp(18), dp(18), dp(18));
         root.setBackgroundColor(BG);
 
-        LinearLayout header = new LinearLayout(this);
-        header.setOrientation(LinearLayout.HORIZONTAL);
-        header.setGravity(Gravity.CENTER_VERTICAL);
-
-        LinearLayout titleColumn = new LinearLayout(this);
-        titleColumn.setOrientation(LinearLayout.VERTICAL);
-
-        TextView title = new TextView(this);
-        title.setText("HansOS");
-        title.setTextColor(TEXT);
-        title.setTextSize(22f);
-        title.setTypeface(Typeface.DEFAULT_BOLD);
-        title.setGravity(Gravity.START);
-        title.setSingleLine(true);
-        titleColumn.addView(title, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
+        mMode = new TextView(this);
+        mMode.setTextColor(MUTED);
+        mMode.setTextSize(12f);
+        mMode.setGravity(Gravity.CENTER);
+        mMode.setTypeface(Typeface.DEFAULT_BOLD);
+        mMode.setSingleLine(true);
+        mMode.setContentDescription("Hans voice mode");
+        root.addView(mMode, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        mConnection = new TextView(this);
-        mConnection.setTextSize(10f);
-        mConnection.setSingleLine(true);
-        titleColumn.addView(mConnection);
-
-        header.addView(titleColumn, new LinearLayout.LayoutParams(
+        mPhrase = new TextView(this);
+        mPhrase.setTextColor(TEXT);
+        mPhrase.setTextSize(28f);
+        mPhrase.setTypeface(Typeface.DEFAULT_BOLD);
+        mPhrase.setGravity(Gravity.CENTER);
+        mPhrase.setIncludeFontPadding(false);
+        mPhrase.setLineSpacing(0f, 1.08f);
+        mPhrase.setText("");
+        mPhrase.setContentDescription("Hans live phrase");
+        root.addView(mPhrase, new LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
                 0,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
                 1f));
 
-        Button stop = makeButton("Stop", SURFACE_ALT, ROSE);
-        stop.setContentDescription("Hans stop");
-        stop.setOnClickListener(view -> emergencyStop());
-        LinearLayout.LayoutParams stopLp = new LinearLayout.LayoutParams(
-                dp(52),
-                dp(32));
-        stopLp.setMargins(dp(6), 0, 0, 0);
-        header.addView(stop, stopLp);
-
-        root.addView(header, new LinearLayout.LayoutParams(
+        mStatus = new TextView(this);
+        mStatus.setTextColor(MUTED);
+        mStatus.setTextSize(13f);
+        mStatus.setGravity(Gravity.CENTER);
+        mStatus.setContentDescription("Hans voice status");
+        root.addView(mStatus, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT));
 
-        mStatePill = new TextView(this);
-        mStatePill.setTextSize(11f);
-        mStatePill.setTypeface(Typeface.DEFAULT_BOLD);
-        mStatePill.setPadding(dp(9), dp(4), dp(9), dp(4));
-        mStatePill.setContentDescription("Hans state");
-        LinearLayout.LayoutParams stateLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
-        stateLp.setMargins(0, dp(6), 0, dp(4));
-        root.addView(mStatePill, stateLp);
-
-        mStatusLine = new TextView(this);
-        mStatusLine.setTextColor(MUTED);
-        mStatusLine.setTextSize(12f);
-        mStatusLine.setText("Bereit fuer Agent-Auftraege.");
-        mStatusLine.setSingleLine(true);
-        LinearLayout.LayoutParams statusLp = new LinearLayout.LayoutParams(
+        mFooter = new TextView(this);
+        mFooter.setTextColor(MUTED);
+        mFooter.setTextSize(10f);
+        mFooter.setGravity(Gravity.CENTER);
+        mFooter.setSingleLine(true);
+        mFooter.setContentDescription("Hans voice footer");
+        LinearLayout.LayoutParams footerLp = new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT);
-        statusLp.setMargins(0, 0, 0, dp(6));
-        root.addView(mStatusLine, statusLp);
-        refreshConnectionStatus();
-
-        LinearLayout quickRow = new LinearLayout(this);
-        quickRow.setOrientation(LinearLayout.HORIZONTAL);
-        quickRow.setGravity(Gravity.CENTER_VERTICAL);
-        quickRow.addView(quickAction("Focus", "turn on focus mode", "Hans quick focus"));
-        quickRow.addView(quickAction("Morning", "morgen briefing", "Hans quick morning"));
-        quickRow.addView(quickAction("Settings", "open settings network", "Hans quick settings"));
-        LinearLayout.LayoutParams quickLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
-        quickLp.setMargins(0, 0, 0, dp(6));
-        root.addView(quickRow, quickLp);
-
-        LinearLayout inputPanel = new LinearLayout(this);
-        inputPanel.setOrientation(LinearLayout.VERTICAL);
-
-        mInput = new EditText(this);
-        mInput.setTextColor(TEXT);
-        mInput.setHintTextColor(MUTED);
-        mInput.setHint("Sprich mit Hans...");
-        mInput.setSingleLine(true);
-        mInput.setMinLines(1);
-        mInput.setTextSize(13f);
-        mInput.setContentDescription("Hans prompt input");
-        mInput.setInputType(InputType.TYPE_CLASS_TEXT);
-        mInput.setImeOptions(EditorInfo.IME_ACTION_SEND);
-        mInput.setBackground(makeRoundRect(SURFACE, LINE));
-        mInput.setMinHeight(0);
-        mInput.setMinimumHeight(0);
-        mInput.setPadding(dp(12), dp(4), dp(12), dp(4));
-        mInput.setOnEditorActionListener((view, actionId, event) -> {
-            submitCurrentInput();
-            return true;
-        });
-        inputPanel.addView(mInput, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                dp(38)));
-
-        LinearLayout commandRow = new LinearLayout(this);
-        commandRow.setOrientation(LinearLayout.HORIZONTAL);
-        commandRow.setGravity(Gravity.CENTER_VERTICAL);
-
-        Button send = makeButton("Send", ACCENT, BG);
-        send.setContentDescription("Hans send");
-        send.setOnClickListener(view -> submitCurrentInput());
-        LinearLayout.LayoutParams sendLp = new LinearLayout.LayoutParams(
-                0,
-                dp(32),
-                1f);
-        sendLp.setMargins(0, dp(6), dp(6), 0);
-        commandRow.addView(send, sendLp);
-
-        mRetry = makeButton("Retry", SURFACE_ALT, BLUE);
-        mRetry.setContentDescription("Hans retry");
-        mRetry.setEnabled(false);
-        mRetry.setAlpha(0.45f);
-        mRetry.setOnClickListener(view -> {
-            if (!mLastPrompt.isEmpty()) {
-                submitPrompt(mLastPrompt, false);
-            }
-        });
-        LinearLayout.LayoutParams retryLp = new LinearLayout.LayoutParams(
-                0,
-                dp(32),
-                1f);
-        retryLp.setMargins(dp(6), dp(6), 0, 0);
-        commandRow.addView(mRetry, retryLp);
-
-        inputPanel.addView(commandRow, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        root.addView(inputPanel, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        mScroll = new ScrollView(this);
-        mScroll.setFillViewport(false);
-        mCards = new LinearLayout(this);
-        mCards.setOrientation(LinearLayout.VERTICAL);
-        mScroll.addView(mCards, new ScrollView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT));
-        LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f);
-        scrollLp.setMargins(0, dp(6), 0, 0);
-        root.addView(mScroll, scrollLp);
+        footerLp.setMargins(0, dp(10), 0, 0);
+        root.addView(mFooter, footerLp);
 
         return root;
     }
 
-    private Button quickAction(String label, String prompt, String description) {
-        Button button = makeButton(label, SURFACE_ALT, TEXT);
-        button.setContentDescription(description);
-        button.setOnClickListener(view -> submitPrompt(prompt, true));
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                0,
-                dp(32),
-                1f);
-        lp.setMargins(0, 0, dp(6), 0);
-        button.setLayoutParams(lp);
-        return button;
-    }
-
-    private void submitCurrentInput() {
-        String text = mInput.getText().toString().trim();
-        if (text.isEmpty()) {
+    private void startVoiceTurn() {
+        if (mRecording) {
             return;
         }
-        mInput.setText("");
-        submitPrompt(text, true);
+        if (!ensureAudioPermission()) {
+            return;
+        }
+        if (mHans == null) {
+            bindHans();
+        }
+        if (mHans == null) {
+            showManualRequired("Hans Core nicht erreichbar.");
+            return;
+        }
+
+        try {
+            mVoiceSessionId = mHans.startVoiceSession(mCallback);
+        } catch (RemoteException e) {
+            showError("Voice start fehlgeschlagen.");
+            return;
+        }
+        mAgentSpeech = new StringBuilder();
+        mActivePhraseOwner = "user";
+        updatePhrase("", "Listening", ACCENT, "Sprich. Loslassen sendet.");
+        startAudioCapture();
+    }
+
+    private void finishVoiceTurn() {
+        if (!mRecording && mVoiceSessionId == null) {
+            return;
+        }
+        String sessionId = mVoiceSessionId;
+        stopAudioCapture(false);
+        if (sessionId == null || mHans == null) {
+            return;
+        }
+        try {
+            mHans.finishVoiceSession(sessionId);
+        } catch (RemoteException e) {
+            showError("Voice finish fehlgeschlagen.");
+        }
+        mVoiceSessionId = null;
+    }
+
+    private void startAudioCapture() {
+        int min = AudioRecord.getMinBufferSize(SAMPLE_RATE,
+                AudioFormat.CHANNEL_IN_MONO,
+                AudioFormat.ENCODING_PCM_16BIT);
+        int bufferSize = Math.max(min, SAMPLE_RATE / 2);
+        try {
+            mRecorder = new AudioRecord(MediaRecorder.AudioSource.VOICE_RECOGNITION,
+                    SAMPLE_RATE,
+                    AudioFormat.CHANNEL_IN_MONO,
+                    AudioFormat.ENCODING_PCM_16BIT,
+                    bufferSize);
+        } catch (IllegalArgumentException e) {
+            showError("Mikrofon konnte nicht initialisiert werden.");
+            return;
+        }
+        if (mRecorder.getState() != AudioRecord.STATE_INITIALIZED) {
+            showError("Mikrofon ist nicht bereit.");
+            return;
+        }
+
+        mRecording = true;
+        mRecorder.startRecording();
+        mAudioThread = new Thread(() -> pumpAudio(bufferSize), "HansCanvasPttAudio");
+        mAudioThread.start();
+    }
+
+    private void pumpAudio(int bufferSize) {
+        byte[] buffer = new byte[bufferSize];
+        while (mRecording && mRecorder != null) {
+            int read = mRecorder.read(buffer, 0, buffer.length);
+            if (read <= 0 || mVoiceSessionId == null || mHans == null) {
+                continue;
+            }
+            byte[] chunk = Arrays.copyOf(buffer, read);
+            try {
+                mHans.appendVoiceAudio(mVoiceSessionId, chunk);
+            } catch (RemoteException e) {
+                runOnUiThread(() -> showError("Audio-Stream unterbrochen."));
+                mRecording = false;
+            }
+        }
+    }
+
+    private void stopAudioCapture(boolean cancelRemote) {
+        mRecording = false;
+        if (mRecorder != null) {
+            try {
+                mRecorder.stop();
+            } catch (IllegalStateException ignored) {
+            }
+            mRecorder.release();
+            mRecorder = null;
+        }
+        if (cancelRemote && mHans != null && mVoiceSessionId != null) {
+            try {
+                mHans.cancelVoiceSession(mVoiceSessionId);
+            } catch (RemoteException ignored) {
+            }
+        }
+        mAudioThread = null;
+    }
+
+    private boolean ensureAudioPermission() {
+        if (checkSelfPermission(Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED) {
+            return true;
+        }
+        requestPermissions(new String[] { Manifest.permission.RECORD_AUDIO }, AUDIO_PERMISSION_REQUEST);
+        showManualRequired("Mikrofonzugriff bestaetigen.");
+        return false;
+    }
+
+    private boolean isPushToTalkKey(int keyCode) {
+        int configured = SystemProperties.getInt(PTT_KEY_PROP, KeyEvent.KEYCODE_ASSIST);
+        return keyCode == configured
+                || keyCode == KeyEvent.KEYCODE_ASSIST
+                || keyCode == KeyEvent.KEYCODE_VOICE_ASSIST
+                || keyCode == KeyEvent.KEYCODE_CAMERA
+                || keyCode == KeyEvent.KEYCODE_HEADSETHOOK
+                || keyCode == KeyEvent.KEYCODE_BUTTON_1;
     }
 
     private void handleDeveloperIntent(Intent intent) {
@@ -281,16 +322,12 @@ public final class HansCanvasActivity extends Activity {
             if (prompt != null) {
                 submitPrompt(prompt, true);
             } else {
-                addSystemCard("Unbekannte Dev-Quick-Action: " + quick);
+                showManualRequired("Unbekannte Dev-Quick-Action: " + quick);
             }
         } else if (ACTION_STOP.equals(action)) {
             emergencyStop();
-        } else if (ACTION_RETRY.equals(action)) {
-            if (!mLastPrompt.isEmpty()) {
-                submitPrompt(mLastPrompt, false);
-            } else {
-                addSystemCard("Kein letzter Auftrag fuer Retry vorhanden.");
-            }
+        } else if (ACTION_RETRY.equals(action) && !mLastPrompt.isEmpty()) {
+            submitPrompt(mLastPrompt, false);
         }
     }
 
@@ -310,215 +347,117 @@ public final class HansCanvasActivity extends Activity {
     private void submitPrompt(String text, boolean remember) {
         if (remember) {
             mLastPrompt = text;
-            mRetry.setEnabled(true);
-            mRetry.setAlpha(1f);
         }
-        mStreamingSpeechView = null;
-        mStreamingSpeech = null;
-        addUserCard(text);
-        setState("Running", BLUE);
-        setStatusLine("Auftrag laeuft.");
+        mActivePhraseOwner = "user";
+        updatePhrase(text, "User", BLUE, "Developer input gesendet.");
         if (mHans == null) {
             bindHans();
-            refreshConnectionStatus();
         }
         if (mHans == null) {
-            setState("Degraded", AMBER);
-            setStatusLine("Core fehlt. Canvas bleibt im lokalen Fehlerpfad.");
-            addEventCard("{\"type\":\"error\",\"message\":\"Hans Core fehlt. Starte Cuttlefish mit HansManagerService.\"}");
+            showManualRequired("Hans Core fehlt.");
             return;
         }
         try {
             mHans.submitIntent(text, mCallback);
         } catch (RemoteException e) {
-            setState("Error", ROSE);
-            setStatusLine("Binder-Aufruf fehlgeschlagen.");
-            addEventCard("{\"type\":\"error\",\"message\":\"Hans Fehler: " + escape(e.getMessage()) + "\"}");
+            showError("Hans Binder-Aufruf fehlgeschlagen.");
         }
     }
 
     private void emergencyStop() {
+        stopAudioCapture(true);
         if (mHans == null) {
             bindHans();
-            refreshConnectionStatus();
         }
         if (mHans == null) {
-            setState("Degraded", AMBER);
-            setStatusLine("Stop nicht moeglich, Core fehlt.");
-            addSystemCard("Stop nicht moeglich: Core fehlt.");
+            showError("Stop nicht moeglich, Core fehlt.");
             return;
         }
         try {
             mHans.emergencyStop();
-            setState("Stopped", ROSE);
-            setStatusLine("Alle laufenden Agent-Schritte wurden gestoppt.");
-            addSystemCard("Emergency Stop aktiv.");
+            updatePhrase("Gestoppt.", "Stopped", ROSE, "Emergency Stop aktiv.");
         } catch (RemoteException e) {
-            setState("Error", ROSE);
-            setStatusLine("Emergency Stop fehlgeschlagen.");
-            addSystemCard("Stop fehlgeschlagen: " + e.getMessage());
+            showError("Emergency Stop fehlgeschlagen.");
         }
     }
 
-    private void addUserCard(String text) {
-        addCard("Command", text, BLUE);
-    }
-
-    private void addSystemCard(String text) {
-        mStreamingSpeechView = null;
-        mStreamingSpeech = null;
-        addCard("System", text, MUTED);
-    }
-
-    private void addEventCard(String raw) {
+    private void handleHansEvent(String raw) {
         String type = "event";
-        String message = raw;
+        String message = raw == null ? "" : raw;
         try {
-            JSONObject event = new JSONObject(raw);
+            JSONObject event = new JSONObject(message);
             type = event.optString("type", "event");
-            message = event.optString("message", raw);
+            message = event.optString("message", "");
         } catch (JSONException ignored) {
-            // Non-JSON system cards are still useful during early boot debugging.
         }
 
-        int color = colorForType(type, message);
-        updateStateForEvent(type, message, color);
-        if ("speech".equals(type) && mStreamingSpeechView != null) {
-            mStreamingSpeech.append(message);
-            mStreamingSpeechView.setText(mStreamingSpeech.toString());
-            mScroll.post(() -> mScroll.fullScroll(ScrollView.FOCUS_DOWN));
-            return;
-        }
-        TextView messageView = addCard(labelForType(type, message), message, color);
-        if ("speech".equals(type)) {
-            mStreamingSpeechView = messageView;
-            mStreamingSpeech = new StringBuilder(message);
-        } else {
-            mStreamingSpeechView = null;
-            mStreamingSpeech = null;
+        if (HansEventTypes.LISTENING_STARTED.equals(type)) {
+            updatePhrase("", "Listening", ACCENT, "Sprich. Loslassen sendet.");
+        } else if (HansEventTypes.TRANSCRIPT_PARTIAL.equals(type)
+                || HansEventTypes.TRANSCRIPT_FINAL.equals(type)) {
+            mActivePhraseOwner = "user";
+            updatePhrase(message, "User", BLUE, "Transkript wird aufgebaut.");
+        } else if (HansEventTypes.SPEAKING_STARTED.equals(type)) {
+            mAgentSpeech = new StringBuilder();
+            mActivePhraseOwner = "agent";
+            updatePhrase("", "Hans", ACCENT, "Antwort startet.");
+        } else if (HansEventTypes.SPEECH.equals(type)) {
+            if (!"agent".equals(mActivePhraseOwner)) {
+                mAgentSpeech = new StringBuilder();
+                mActivePhraseOwner = "agent";
+            }
+            mAgentSpeech.append(message);
+            updatePhrase(mAgentSpeech.toString(), "Hans", ACCENT, "Antwort streamt.");
+        } else if (HansEventTypes.SPEAKING_FINISHED.equals(type)) {
+            setMode("Hans", ACCENT);
+            mStatus.setText("Antwort bereit.");
+        } else if (HansEventTypes.ERROR.equals(type)
+                || HansEventTypes.REPAIR_SUGGESTION.equals(type)
+                || HansEventTypes.MANUAL_MODE_REQUIRED.equals(type)) {
+            showManualRequired(message);
+        } else if (HansEventTypes.ACTION_STARTED.equals(type)
+                || HansEventTypes.APP_CONTROL_STARTED.equals(type)) {
+            setMode("Acting", AMBER);
+            mStatus.setText("Aktion laeuft: " + message);
+        } else if (HansEventTypes.VISUAL_STARTED.equals(type)
+                || HansEventTypes.VISUAL_UPDATED.equals(type)) {
+            updatePhrase(message, "Visual", BLUE, "Visuelle Darstellung aktiv.");
+        } else if (HansEventTypes.DONE.equals(type)) {
+            setMode("Ready", ACCENT);
+            mStatus.setText("Bereit fuer die Seitentaste.");
+        } else if (HansEventTypes.THINKING.equals(type) || HansEventTypes.PLAN.equals(type)) {
+            setMode("Thinking", BLUE);
+            mStatus.setText(message);
         }
     }
 
-    private TextView addCard(String label, String message, int accentColor) {
-        LinearLayout card = new LinearLayout(this);
-        card.setOrientation(LinearLayout.VERTICAL);
-        card.setPadding(dp(16), dp(13), dp(16), dp(14));
-        card.setBackground(makeRoundRect(SURFACE, darken(accentColor)));
-
-        TextView labelView = new TextView(this);
-        labelView.setText(label);
-        labelView.setTextColor(accentColor);
-        labelView.setTextSize(12f);
-        labelView.setTypeface(Typeface.DEFAULT_BOLD);
-        card.addView(labelView);
-
-        TextView messageView = new TextView(this);
-        messageView.setText(message);
-        messageView.setTextColor(TEXT);
-        messageView.setTextSize(16f);
-        messageView.setLineSpacing(0f, 1.12f);
-        LinearLayout.LayoutParams messageLp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
-        messageLp.setMargins(0, dp(6), 0, 0);
-        card.addView(messageView, messageLp);
-
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT);
-        lp.setMargins(0, dp(10), 0, 0);
-        mCards.addView(card, lp);
-        mScroll.post(() -> mScroll.fullScroll(ScrollView.FOCUS_DOWN));
-        return messageView;
+    private void showIdle() {
+        setMode("Ready", ACCENT);
+        mPhrase.setText("");
+        mStatus.setText("Seitentaste halten und sprechen.");
+        mFooter.setText("Core " + (mHans == null ? "getrennt" : "verbunden")
+                + " - Provider " + providerLabel());
     }
 
-    private void updateStateForEvent(String type, String message, int color) {
-        if ("error".equals(type) || "repair_suggestion".equals(type)) {
-            setState("Needs attention", ROSE);
-            setStatusLine("Hans braucht Aufmerksamkeit.");
-        } else if (message != null && message.toLowerCase().contains("without runtime")) {
-            setState("Degraded", AMBER);
-            setStatusLine("Runtime fehlt. Core antwortet lokal degradiert.");
-        } else if ("action_started".equals(type) || "app_control_started".equals(type)) {
-            setState("Acting", AMBER);
-            setStatusLine("Aktion wird ausgefuehrt.");
-        } else if ("speech".equals(type)) {
-            setState("Speaking", BLUE);
-            setStatusLine("Antwort wird aufgebaut.");
-        } else if ("thinking".equals(type) || "plan".equals(type)) {
-            setState("Thinking", color);
-            setStatusLine("Hans plant den naechsten Schritt.");
-        } else if ("done".equals(type)) {
-            setState("Ready", ACCENT);
-            setStatusLine("Bereit fuer den naechsten Auftrag.");
-        }
+    private void showManualRequired(String message) {
+        updatePhrase(message, "Needs attention", AMBER, "Touch/Setup nur falls noetig.");
     }
 
-    private String labelForType(String type, String message) {
-        if (message != null && message.toLowerCase().contains("without runtime")) {
-            return "Degraded";
-        }
-        if ("thinking".equals(type)) {
-            return "Thinking";
-        }
-        if ("plan".equals(type)) {
-            return "Plan";
-        }
-        if ("speech".equals(type)) {
-            return "Speech";
-        }
-        if ("action_started".equals(type) || "app_control_started".equals(type)) {
-            return "Action";
-        }
-        if ("action_completed".equals(type) || "app_control_completed".equals(type)) {
-            return "Result";
-        }
-        if ("audit".equals(type)) {
-            return "Audit";
-        }
-        if ("error".equals(type)) {
-            return "Error";
-        }
-        if ("repair_suggestion".equals(type)) {
-            return "Repair";
-        }
-        if ("done".equals(type)) {
-            return "Done";
-        }
-        return "Hans";
+    private void showError(String message) {
+        updatePhrase(message, "Error", ROSE, "Hans braucht Aufmerksamkeit.");
     }
 
-    private int colorForType(String type, String message) {
-        if (message != null && message.toLowerCase().contains("without runtime")) {
-            return AMBER;
-        }
-        if ("action_started".equals(type) || "action_completed".equals(type)
-                || "app_control_started".equals(type) || "app_control_completed".equals(type)) {
-            return AMBER;
-        }
-        if ("speech".equals(type) || "thinking".equals(type) || "plan".equals(type)) {
-            return BLUE;
-        }
-        if ("error".equals(type) || "repair_suggestion".equals(type)) {
-            return ROSE;
-        }
-        if ("done".equals(type)) {
-            return ACCENT;
-        }
-        return MUTED;
+    private void updatePhrase(String phrase, String mode, int color, String status) {
+        setMode(mode, color);
+        mPhrase.setText(phrase == null ? "" : phrase);
+        mStatus.setText(status == null ? "" : status);
+        mFooter.setText("Core " + (mHans == null ? "getrennt" : "verbunden")
+                + " - Provider " + providerLabel());
     }
 
-    private void refreshConnectionStatus() {
-        if (mHans == null) {
-            mConnection.setText("Core getrennt - Provider " + providerLabel());
-            mConnection.setTextColor(AMBER);
-            setState("Degraded", AMBER);
-            setStatusLine("Core nicht erreichbar.");
-        } else {
-            mConnection.setText("Core verbunden - Provider " + providerLabel());
-            mConnection.setTextColor(ACCENT);
-            setState("Ready", ACCENT);
-        }
+    private void setMode(String mode, int color) {
+        mMode.setText(mode);
+        mMode.setTextColor(color);
     }
 
     private String providerLabel() {
@@ -529,62 +468,7 @@ public final class HansCanvasActivity extends Activity {
         return "Fake";
     }
 
-    private void setState(String label, int color) {
-        if (mStatePill == null) {
-            return;
-        }
-        mStatePill.setText(label);
-        mStatePill.setContentDescription("Hans state " + label);
-        mStatePill.setTextColor(color);
-        mStatePill.setBackground(makeRoundRect(darken(color), color));
-    }
-
-    private void setStatusLine(String text) {
-        if (mStatusLine != null) {
-            mStatusLine.setText(text);
-        }
-    }
-
-    private Button makeButton(String text, int background, int foreground) {
-        Button button = new Button(this);
-        button.setText(text);
-        button.setTextColor(foreground);
-        button.setTextSize(12f);
-        button.setAllCaps(false);
-        button.setMinHeight(0);
-        button.setMinimumHeight(0);
-        button.setMinWidth(0);
-        button.setMinimumWidth(0);
-        button.setSingleLine(true);
-        button.setGravity(Gravity.CENTER);
-        button.setPadding(dp(8), 0, dp(8), 0);
-        button.setBackground(makeRoundRect(background, LINE));
-        return button;
-    }
-
-    private GradientDrawable makeRoundRect(int fill, int stroke) {
-        GradientDrawable drawable = new GradientDrawable();
-        drawable.setColor(fill);
-        drawable.setCornerRadius(dp(8));
-        drawable.setStroke(dp(1), stroke);
-        return drawable;
-    }
-
-    private int darken(int color) {
-        return Color.rgb(
-                Math.max(0, Color.red(color) / 4),
-                Math.max(0, Color.green(color) / 4),
-                Math.max(0, Color.blue(color) / 4));
-    }
-
     private int dp(int value) {
         return (int) (value * getResources().getDisplayMetrics().density + 0.5f);
-    }
-
-    private String escape(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

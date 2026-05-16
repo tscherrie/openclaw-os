@@ -13,6 +13,8 @@ persist.hansos.openai_key_parts
 persist.hansos.openai_key_part1...N
 persist.hansos.openai_key_file
 persist.hansos.openai_model
+persist.hansos.openai_transcription_model
+persist.hansos.openai_base_url
 persist.hansos.provider
 ```
 
@@ -26,13 +28,21 @@ hansos_openai_key_parts
 hansos_openai_key_part1...N
 hansos_openai_key_file
 hansos_openai_model
+hansos_openai_transcription_model
+hansos_openai_base_url
 hansos_provider
 ```
 
-The model property defaults to:
+The text model property defaults to:
 
 ```text
 gpt-5.4-mini
+```
+
+The voice transcription model property defaults to:
+
+```text
+gpt-4o-mini-transcribe
 ```
 
 Preferred local setup uses the helper script so the key is read from stdin and
@@ -49,6 +59,7 @@ Manual local setup:
 ```text
 adb shell setprop persist.hansos.openai_key sk-...
 adb shell setprop persist.hansos.openai_model gpt-5.4-mini
+adb shell setprop persist.hansos.openai_transcription_model gpt-4o-mini-transcribe
 adb shell setprop persist.hansos.provider openai
 adb shell am startservice -n ai.hansos.runtime/.HansRuntimeService
 ```
@@ -62,6 +73,7 @@ adb shell setprop persist.hansos.openai_key_part1 <part-1>
 adb shell setprop persist.hansos.openai_key_part2 <part-2>
 adb shell setprop persist.hansos.openai_key_part3 <part-3>
 adb shell setprop persist.hansos.openai_model gpt-5.4-mini
+adb shell setprop persist.hansos.openai_transcription_model gpt-4o-mini-transcribe
 adb shell setprop persist.hansos.provider openai
 adb shell am startservice -n ai.hansos.runtime/.HansRuntimeService
 ```
@@ -147,31 +159,32 @@ ADB=/usr/bin/adb scripts/smoke-mp01.sh \
 ```
 
 If the MP01 has no Android default network after a clean userdata wipe, use the
-host-side HTTPS CONNECT proxy only for the manual OpenAI test:
+host-side adb-reverse OpenAI proxy only for the manual OpenAI test:
 
 ```text
-python3 scripts/adb-reverse-connect-proxy.py \
-  --listen 127.0.0.1 \
-  --port 8888 \
-  --allow-host api.openai.com \
-  --allow-port 443
-
-adb -s MP0125031802636 reverse tcp:8888 tcp:8888
-adb -s MP0125031802636 shell settings put global http_proxy 127.0.0.1:8888
+python3 scripts/hans-openai-proxy.py --host 127.0.0.1 --port 18080
+adb -s MP0125031802636 reverse tcp:18080 tcp:18080
+printf '%s' "$OPENAI_API_KEY" | \
+  ADB=/usr/bin/adb scripts/hans-openai-byok.sh \
+    --serial MP0125031802636 \
+    --model gpt-4o-mini \
+    --base-url http://127.0.0.1:18080/v1 \
+    configure
 ```
 
 Clear both the key and proxy immediately after the manual test:
 
 ```text
 ADB=/usr/bin/adb scripts/hans-openai-byok.sh --serial MP0125031802636 clear
-adb -s MP0125031802636 shell settings delete global http_proxy
-adb -s MP0125031802636 shell settings put global http_proxy :0
-adb -s MP0125031802636 reverse --remove tcp:8888
+adb -s MP0125031802636 reverse --remove tcp:18080
 ```
 
-The 2026-05-15 MP01 Alpha 2 hardware test used this proxy path, passed one real
-OpenAI prompt, then verified `hansos_openai_key_parts=0`, `http_proxy=:0`, and a
-stopped proxy process before rerunning the fake smoke.
+The proxy path keeps the API key inside the device/runtime request and avoids
+logging authorization headers. It is only a development bridge for offline
+userdata-wiped MP01 test boots; production owner devices should use their own
+Wi-Fi or cellular default network. The runtime permits cleartext HTTP only so
+this loopback bridge can work, and rejects non-loopback HTTP OpenAI base URLs
+in code before opening a network connection.
 
 Never put the key in command arguments, logs, source files, Canvas resources, or
 Android manifests. The helper stores long `sk-proj-...` values as numbered
@@ -180,8 +193,13 @@ cannot be written by shell on the current MP01 image.
 
 ## Runtime Behavior
 
-The runtime contains an OpenAI Responses API provider behind an explicit
-provider switch. The default is:
+The runtime contains two direct-BYOK OpenAI paths behind the same runtime
+boundary:
+
+- Responses API for agent answers.
+- Audio Transcriptions API for push-to-talk voice turns.
+
+The default text provider switch is:
 
 ```text
 persist.hansos.provider=fake
@@ -189,8 +207,8 @@ persist.hansos.provider=fake
 
 Set `persist.hansos.provider=openai` to route normal non-local prompts through
 OpenAI. Local alpha intents such as focus mode, morning brief, and app-control
-fixtures still stay on deterministic fake providers so smoke tests remain
-stable.
+fixtures stay on deterministic fake providers in Cuttlefish, and use real
+system providers on MP01 when `persist.hansos.context_provider=real`.
 
 The manual direct trigger is also kept:
 
@@ -205,6 +223,14 @@ provider boundary and BYOK path.
 
 ## Voice Direction
 
-Voice-first remains the product direction. The first Cuttlefish alpha uses text
-and fake injection. OpenAI Realtime should be added behind the same runtime
-provider boundary after the bootable Canvas/Core loop is stable.
+Voice-first is now a built runtime path. HansCanvas records 16 kHz mono PCM16
+while the MP01 side button is held, streams chunks through Binder to
+HansRuntimeService, and the runtime can convert that audio to a WAV and send it
+to the OpenAI Audio Transcriptions API. The returned transcript is emitted as
+`transcript_final` and then routed through the same intent planner as text.
+When BYOK is configured, the runtime also attempts best-effort partial
+transcriptions every few seconds and emits them as `transcript_partial`, so the
+centered Canvas phrase can visibly build while the button is still held.
+
+Realtime can still replace the non-streaming transcription hop later, but v1 no
+longer depends on Realtime to produce a real transcript.

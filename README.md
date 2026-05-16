@@ -24,32 +24,38 @@ This repository has been rebooted from the legacy OpenClaw/Clawdroid prototype.
 The old project is preserved under `archive/legacy-openclaw-os/`, and the Git
 branch `legacy-openclaw-os-reference` points to the original checked-out state.
 
-HansOS v0 contains the build-oriented skeleton for the first Cuttlefish alpha:
+HansOS now contains the build-oriented skeleton plus the v1 voice-first runtime
+path for Cuttlefish and MP01:
 
 ```text
 aosp/
   device/hansos/cuttlefish/             Custom Cuttlefish product
   frameworks/base/.../HansManagerService SystemServer service skeleton
   packages/apps/HansCanvas/             Pure-agent launcher surface
-runtime/HansRuntimeService/             Privileged runtime process
+runtime/HansRuntimeService/             Privileged runtime, BYOK, voice, providers
 protocol/                               AIDL contract and shared constants
 fakes/                                  Cuttlefish fake daily-phone providers
 docs/                                   Architecture, build path, alpha flows
 archive/                                Legacy project snapshot
 ```
 
-## First Alpha Definition
+## Current v1 Target
 
-The first alpha is successful when a Cuttlefish build:
+The current v1 target is successful when a Cuttlefish/MP01 build:
 
 1. Boots into Hans Canvas.
 2. Starts `HansManagerService` from SystemServer.
 3. Starts `HansRuntimeService` as a privileged persistent service.
-4. Runs these flows end-to-end:
+4. Uses MP01 push-to-talk as the primary input surface.
+5. Streams the current transcript and then the agent answer into the centered
+   HansCanvas phrase surface.
+6. Runs these flows end-to-end:
    - Command to action
    - Morning Agent
    - App Control
-5. Records every autonomous action in a local audit stream.
+7. Uses real MP01 system providers after deterministic fake-flow gates pass.
+8. Records every autonomous action in a local audit stream.
+9. Keeps sensitive operations behind manual mode.
 
 ## Design Defaults
 
@@ -62,7 +68,7 @@ The first alpha is successful when a Cuttlefish build:
 - Product target: `hansos_cf_arm64-trunk_staging-userdebug`
 - Post-Cuttlefish hardware target: Minimal Phone MP01 via Android 14 GSI/Treble path
 - LLM provider: OpenAI direct BYOK
-- Voice direction: OpenAI Realtime, text/fake injection for early Cuttlefish
+- Voice direction: MP01 side-button push-to-talk with OpenAI BYOK transcription
 - Autonomy: autonomous defaults plus local rules and memory
 
 ## References

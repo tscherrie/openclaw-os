@@ -77,8 +77,9 @@ Expected browser state:
 
 - The WebRTC page exposes `display_0`.
 - The video track reports the Cuttlefish display size, currently `390x844`.
-- Clicking the visible Stop control reaches the guest and records an
-  `emergency_stop` audit event in `dumpsys hans`.
+- Developer stop intents and the hardware Emergency Stop path record an
+  `emergency_stop` audit event in `dumpsys hans`. The v1 Canvas default mode no
+  longer exposes a visible Stop button.
 
 ## Developer Input Bridge
 
@@ -95,7 +96,7 @@ scripts/hans-input-bridge.sh --connect 0.0.0.0:6520 stop
 Raw UI tap helpers remain available for diagnostics:
 
 ```text
-scripts/hans-input-bridge.sh --connect 0.0.0.0:6520 tap-desc "Hans quick focus"
+scripts/hans-input-bridge.sh --connect 0.0.0.0:6520 tap-desc "Hans live phrase"
 scripts/hans-input-bridge.sh --connect 0.0.0.0:6520 dump
 ```
 
