@@ -12,6 +12,8 @@ button is the primary push-to-talk surface:
 3. Release finishes transcription and sends the turn to Hans.
 4. The agent response replaces the transcript and remains centered until the
    next input or visual state.
+5. When BYOK speech output is enabled, the final agent answer is also spoken
+   through the phone speaker.
 
 HansCanvas remains a black, always-on status surface in user mode. It shows only
 the current transcript, the current answer, and a compact status line.
@@ -33,6 +35,9 @@ the current transcript, the current answer, and a compact status line.
   deterministic diagnostics and smoke tests.
 - `scripts/mp01-ptt-diagnose.sh` captures input devices, keylayout hints,
   `getevent` output, and Hans voice diagnostics.
+- HansRuntimeService always owns speech output through OpenAI `audio/speech` and
+  plays the result locally. HansCanvas remains display-only so the voice quality
+  is consistent across images and devices.
 
 ## App Pilot
 

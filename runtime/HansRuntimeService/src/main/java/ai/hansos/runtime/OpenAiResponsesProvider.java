@@ -33,12 +33,15 @@ final class OpenAiResponsesProvider {
     private static final String DEFAULT_API_BASE_URL = "https://api.openai.com/v1";
     private static final String RESPONSES_ENDPOINT = "responses";
     private static final String AUDIO_TRANSCRIPTIONS_ENDPOINT = "audio/transcriptions";
+    private static final String AUDIO_SPEECH_ENDPOINT = "audio/speech";
     private static final String KEY_PROP = "persist.hansos.openai_key";
     private static final String KEY_PART_COUNT_PROP = "persist.hansos.openai_key_parts";
     private static final String KEY_PART_PROP_PREFIX = "persist.hansos.openai_key_part";
     private static final String KEY_FILE_PROP = "persist.hansos.openai_key_file";
     private static final String MODEL_PROP = "persist.hansos.openai_model";
     private static final String TRANSCRIPTION_MODEL_PROP = "persist.hansos.openai_transcription_model";
+    private static final String SPEECH_MODEL_PROP = "persist.hansos.openai_speech_model";
+    private static final String SPEECH_VOICE_PROP = "persist.hansos.openai_speech_voice";
     private static final String BASE_URL_PROP = "persist.hansos.openai_base_url";
     private static final String KEY_SETTING = "hansos_openai_key";
     private static final String KEY_PART_COUNT_SETTING = "hansos_openai_key_parts";
@@ -46,9 +49,14 @@ final class OpenAiResponsesProvider {
     private static final String KEY_FILE_SETTING = "hansos_openai_key_file";
     private static final String MODEL_SETTING = "hansos_openai_model";
     private static final String TRANSCRIPTION_MODEL_SETTING = "hansos_openai_transcription_model";
+    private static final String SPEECH_MODEL_SETTING = "hansos_openai_speech_model";
+    private static final String SPEECH_VOICE_SETTING = "hansos_openai_speech_voice";
     private static final String BASE_URL_SETTING = "hansos_openai_base_url";
     private static final String DEFAULT_MODEL = "gpt-5.4-mini";
     private static final String DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
+    private static final String DEFAULT_SPEECH_MODEL = "gpt-4o-mini-tts";
+    private static final String DEFAULT_SPEECH_VOICE = "alloy";
+    private static final int MAX_SPEECH_AUDIO_BYTES = 6 * 1024 * 1024;
     private static final int MAX_KEY_PARTS = 8;
     private final ContentResolver mResolver;
 
@@ -89,6 +97,24 @@ final class OpenAiResponsesProvider {
         }
         model = getGlobalString(TRANSCRIPTION_MODEL_SETTING);
         return model.isEmpty() ? DEFAULT_TRANSCRIPTION_MODEL : model;
+    }
+
+    String getSpeechModel() {
+        String model = SystemProperties.get(SPEECH_MODEL_PROP, "").trim();
+        if (!model.isEmpty()) {
+            return model;
+        }
+        model = getGlobalString(SPEECH_MODEL_SETTING);
+        return model.isEmpty() ? DEFAULT_SPEECH_MODEL : model;
+    }
+
+    String getSpeechVoice() {
+        String voice = SystemProperties.get(SPEECH_VOICE_PROP, "").trim();
+        if (!voice.isEmpty()) {
+            return voice;
+        }
+        voice = getGlobalString(SPEECH_VOICE_SETTING);
+        return voice.isEmpty() ? DEFAULT_SPEECH_VOICE : voice;
     }
 
     String transcribePcm16Mono(byte[] pcm16Mono, int sampleRate)
@@ -176,6 +202,44 @@ final class OpenAiResponsesProvider {
         }
     }
 
+    byte[] synthesizeSpeechMp3(String text) throws OpenAiException, IOException {
+        String input = text == null ? "" : text.trim();
+        if (input.isEmpty()) {
+            return new byte[0];
+        }
+        String key = getApiKey();
+        if (key.isEmpty()) {
+            throw new OpenAiException("OpenAI BYOK key fehlt fuer Tonausgabe.",
+                    "Setze persist.hansos.openai_key(_parts), hansos_openai_key(_parts) oder eine BYOK-Key-Datei.");
+        }
+
+        HttpURLConnection connection = (HttpURLConnection)
+                buildEndpointUrl(AUDIO_SPEECH_ENDPOINT).openConnection();
+        connection.setConnectTimeout(15_000);
+        connection.setReadTimeout(90_000);
+        connection.setRequestMethod("POST");
+        connection.setDoOutput(true);
+        connection.setRequestProperty("Authorization", "Bearer " + key);
+        connection.setRequestProperty("Content-Type", "application/json");
+        connection.setRequestProperty("Accept", "audio/mpeg");
+
+        byte[] payload = buildSpeechPayload(input).toString().getBytes(StandardCharsets.UTF_8);
+        try (OutputStream output = connection.getOutputStream()) {
+            output.write(payload);
+        }
+
+        int code = connection.getResponseCode();
+        if (code < 200 || code >= 300) {
+            throw new OpenAiException(buildHttpError(code, connection),
+                    repairSuggestionForHttp(code));
+        }
+        try {
+            return readBytes(connection.getInputStream(), MAX_SPEECH_AUDIO_BYTES);
+        } finally {
+            connection.disconnect();
+        }
+    }
+
     private JSONObject buildPayload(String userText) throws IOException {
         try {
             JSONObject payload = new JSONObject();
@@ -191,6 +255,19 @@ final class OpenAiResponsesProvider {
             return payload;
         } catch (JSONException e) {
             throw new IOException("Could not build OpenAI payload", e);
+        }
+    }
+
+    private JSONObject buildSpeechPayload(String text) throws IOException {
+        try {
+            JSONObject payload = new JSONObject();
+            payload.put("model", getSpeechModel());
+            payload.put("voice", getSpeechVoice());
+            payload.put("input", text);
+            payload.put("response_format", "mp3");
+            return payload;
+        } catch (JSONException e) {
+            throw new IOException("Could not build OpenAI speech payload", e);
         }
     }
 
@@ -291,6 +368,21 @@ final class OpenAiResponsesProvider {
             return builder.toString();
         } catch (IOException e) {
             return "";
+        }
+    }
+
+    private byte[] readBytes(InputStream stream, int maxBytes) throws IOException {
+        try (InputStream input = stream;
+                ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            byte[] buffer = new byte[8192];
+            int read;
+            while ((read = input.read(buffer)) != -1) {
+                if (output.size() + read > maxBytes) {
+                    throw new IOException("OpenAI speech response exceeded local safety limit");
+                }
+                output.write(buffer, 0, read);
+            }
+            return output.toByteArray();
         }
     }
 

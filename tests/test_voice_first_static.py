@@ -24,6 +24,20 @@ def test_canvas_default_is_voice_first_surface() -> None:
     assert "EditText" not in canvas
 
 
+def test_canvas_stays_display_only_while_runtime_owns_openai_audio() -> None:
+    canvas = read("aosp/packages/apps/HansCanvas/src/main/java/ai/hansos/canvas/HansCanvasActivity.java")
+    speech_block = canvas[canvas.index("HansEventTypes.SPEECH"):canvas.index("HansEventTypes.SPEAKING_FINISHED")]
+    finish_block = canvas[canvas.index("HansEventTypes.SPEAKING_FINISHED"):canvas.index("HansEventTypes.ERROR")]
+
+    assert "TextToSpeech" not in canvas
+    assert "tts_enabled" not in canvas
+    assert "appendSpeechOutput" not in canvas
+    assert "flushSpeechOutput" not in canvas
+    assert "mAgentSpeech.append(message)" in speech_block
+    assert "updatePhrase(mAgentSpeech.toString()" in speech_block
+    assert "mStatus.setText(\"Antwort bereit.\")" in finish_block
+
+
 def test_voice_contract_is_exposed_through_binder() -> None:
     manager = read("protocol/aidl/ai/hansos/agent/IHansManager.aidl")
     runtime = read("protocol/aidl/ai/hansos/agent/IHansRuntime.aidl")
@@ -110,6 +124,26 @@ def test_voice_audio_can_be_transcribed_through_byok_and_routed() -> None:
     assert "gpt-4o-mini-transcribe" in openai
     assert "buildPcm16Wav" in openai
     assert "multipart/form-data" in openai
+
+
+def test_agent_answers_can_be_spoken_on_device_without_android_tts_engine() -> None:
+    runtime = read("runtime/HansRuntimeService/src/main/java/ai/hansos/runtime/HansRuntimeService.java")
+    openai = read("runtime/HansRuntimeService/src/main/java/ai/hansos/runtime/OpenAiResponsesProvider.java")
+
+    assert "MediaPlayer" in runtime
+    assert "AudioAttributes.USAGE_ASSISTANT" in runtime
+    assert "persist.hansos.audio_output_enabled" in runtime
+    assert "hansos_audio_output_enabled" in runtime
+    assert "enqueueAudioOutput(message)" in runtime
+    assert "enqueueAudioOutput(spoken.toString())" in runtime
+    assert "stopAudioOutput();" in runtime
+    assert "Playing Hans speech output" in runtime
+    assert "audio/speech" in openai
+    assert "synthesizeSpeechMp3" in openai
+    assert "persist.hansos.openai_speech_model" in openai
+    assert "persist.hansos.openai_speech_voice" in openai
+    assert "gpt-4o-mini-tts" in openai
+    assert "response_format" in openai
 
 
 def test_voice_turns_prefer_openai_over_accidental_local_actions() -> None:

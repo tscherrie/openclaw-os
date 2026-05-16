@@ -232,5 +232,18 @@ When BYOK is configured, the runtime also attempts best-effort partial
 transcriptions every few seconds and emits them as `transcript_partial`, so the
 centered Canvas phrase can visibly build while the button is still held.
 
+Agent answers are spoken on-device through OpenAI Text-to-Speech. HansCanvas
+stays display-only: it renders the transcript and streamed answer, while
+HansRuntimeService sends the final assistant answer to the OpenAI `audio/speech`
+endpoint, stores the returned MP3 only as a short-lived app-cache file, plays it
+through Android audio, and deletes the file after playback. This keeps one
+consistent high-quality voice path across Cuttlefish, MP01, and future devices
+instead of depending on whatever Android TTS engine an image happens to ship.
+Speech output is enabled by default and can be disabled with
+`persist.hansos.audio_output_enabled=0` or `hansos_audio_output_enabled=0`.
+The default speech model is `gpt-4o-mini-tts`; the model and voice can be
+overridden with `persist.hansos.openai_speech_model` and
+`persist.hansos.openai_speech_voice`.
+
 Realtime can still replace the non-streaming transcription hop later, but v1 no
 longer depends on Realtime to produce a real transcript.

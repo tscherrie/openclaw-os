@@ -3,6 +3,8 @@ package ai.hansos.runtime;
 import android.app.Service;
 import android.os.Build;
 import android.content.Intent;
+import android.media.AudioAttributes;
+import android.media.MediaPlayer;
 import android.os.Handler;
 import android.os.HandlerThread;
 import android.os.IBinder;
@@ -13,6 +15,9 @@ import android.provider.Settings;
 import android.util.Slog;
 
 import java.io.ByteArrayOutputStream;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
@@ -41,8 +46,11 @@ public final class HansRuntimeService extends Service {
     private static final int MAX_VOICE_AUDIO_BYTES = VOICE_SAMPLE_RATE * 2 * 90;
     private static final int VOICE_PARTIAL_TRANSCRIPT_BYTES = VOICE_SAMPLE_RATE * 2 * 4;
     private static final String VOICE_PARTIALS_PROP = "persist.hansos.voice_partial_transcripts";
+    private static final String AUDIO_OUTPUT_ENABLED_PROP = "persist.hansos.audio_output_enabled";
+    private static final String AUDIO_OUTPUT_ENABLED_SETTING = "hansos_audio_output_enabled";
     private static final int APP_PILOT_MAX_STEPS = 8;
     private static final long APP_PILOT_TIMEOUT_MS = 12_000L;
+    private static final int MAX_SPEECH_TEXT_CHARS = 3500;
 
     private HandlerThread mThread;
     private Handler mHandler;
@@ -52,6 +60,8 @@ public final class HansRuntimeService extends Service {
     private final FakeAppControlProvider mAppControl = new FakeAppControlProvider();
     private SystemPhoneProvider mSystemPhone;
     private OpenAiResponsesProvider mOpenAi;
+    private final Map<MediaPlayer, File> mSpeechPlayers = new ConcurrentHashMap<>();
+    private volatile int mSpeechOutputGeneration;
 
     private final IHansRuntime.Stub mBinder = new IHansRuntime.Stub() {
         @Override
@@ -66,6 +76,7 @@ public final class HansRuntimeService extends Service {
         public String startVoiceSession(IHansStreamCallback callback) {
             String sessionId = UUID.randomUUID().toString();
             mStopped = false;
+            stopAudioOutput();
             VoiceSession session = new VoiceSession(sessionId, callback);
             mVoiceSessions.put(sessionId, session);
             mHandler.post(() -> {
@@ -102,6 +113,7 @@ public final class HansRuntimeService extends Service {
                 return;
             }
             mHandler.post(() -> {
+                stopAudioOutput();
                 emit(sessionId, session.callback, HansEventTypes.LISTENING_FINISHED, "Abgebrochen.");
                 emit(sessionId, session.callback, HansEventTypes.DONE, "Voice turn abgebrochen.");
             });
@@ -110,6 +122,7 @@ public final class HansRuntimeService extends Service {
         @Override
         public void emergencyStop() {
             mStopped = true;
+            stopAudioOutput();
             mVoiceSessions.clear();
             mHandler.removeCallbacksAndMessages(null);
             Slog.w(TAG, "Emergency stop received");
@@ -151,6 +164,7 @@ public final class HansRuntimeService extends Service {
     @Override
     public void onDestroy() {
         super.onDestroy();
+        stopAudioOutput();
         unregisterFromManager();
         if (mThread != null) {
             mThread.quitSafely();
@@ -187,6 +201,7 @@ public final class HansRuntimeService extends Service {
     }
 
     private void runFlow(String requestId, String text, IHansStreamCallback callback) {
+        stopAudioOutput();
         String prompt = text == null ? "" : text.trim();
         String normalized = prompt.toLowerCase(Locale.ROOT);
         boolean explicitOpenAi = normalized.startsWith("ask openai");
@@ -368,10 +383,17 @@ public final class HansRuntimeService extends Service {
         emit(requestId, callback, HansEventTypes.PLAN,
                 "Ich sende diesen Prompt ueber deinen BYOK-Key an " + mOpenAi.getModel() + ".");
         try {
+            StringBuilder spoken = new StringBuilder();
             emit(requestId, callback, HansEventTypes.SPEAKING_STARTED, "OpenAI Antwort startet.");
             mOpenAi.streamResponse(text,
-                    (type, message) -> emit(requestId, callback, type, message));
+                    (type, message) -> {
+                        if (HansEventTypes.SPEECH.equals(type) && message != null) {
+                            spoken.append(message);
+                        }
+                        emit(requestId, callback, type, message);
+                    });
             emit(requestId, callback, HansEventTypes.SPEAKING_FINISHED, "OpenAI Antwort beendet.");
+            enqueueAudioOutput(spoken.toString());
         } catch (OpenAiResponsesProvider.OpenAiException e) {
             emit(requestId, callback, HansEventTypes.ERROR, e.getMessage());
             emit(requestId, callback, HansEventTypes.REPAIR_SUGGESTION, e.getRepairSuggestion());
@@ -398,10 +420,8 @@ public final class HansRuntimeService extends Service {
         emit(session.sessionId, session.callback, HansEventTypes.THINKING, "Voice turn empfangen.");
         emit(session.sessionId, session.callback, HansEventTypes.PLAN,
                 "Ich halte die Audio-Strecke stabil und nutze bis zur Transkription den lokalen Voice-Fallback.");
-        emit(session.sessionId, session.callback, HansEventTypes.SPEAKING_STARTED, "Antwort startet.");
-        emit(session.sessionId, session.callback, HansEventTypes.SPEECH,
+        speak(session.sessionId, session.callback,
                 "Ich habe dich gehoert. Die Push-to-talk Strecke ist bereit; echte Transkription wird als Provider-Schritt angebunden.");
-        emit(session.sessionId, session.callback, HansEventTypes.SPEAKING_FINISHED, "Antwort beendet.");
         emit(session.sessionId, session.callback, HansEventTypes.AUDIT,
                 "voice_session bytes=" + session.bytesReceived);
         emit(session.sessionId, session.callback, HansEventTypes.DONE, "Voice turn abgeschlossen.");
@@ -465,6 +485,110 @@ public final class HansRuntimeService extends Service {
         emit(requestId, callback, HansEventTypes.SPEAKING_STARTED, "Antwort startet.");
         emit(requestId, callback, HansEventTypes.SPEECH, message);
         emit(requestId, callback, HansEventTypes.SPEAKING_FINISHED, "Antwort beendet.");
+        enqueueAudioOutput(message);
+    }
+
+    private void enqueueAudioOutput(String message) {
+        if (!isAudioOutputEnabled() || mOpenAi == null || !mOpenAi.isConfigured()) {
+            return;
+        }
+        String text = message == null ? "" : message.trim();
+        if (text.isEmpty()) {
+            return;
+        }
+        if (text.length() > MAX_SPEECH_TEXT_CHARS) {
+            text = text.substring(0, MAX_SPEECH_TEXT_CHARS);
+        }
+        final String speechText = text;
+        final int generation = mSpeechOutputGeneration;
+        Thread speechThread = new Thread(() -> {
+            try {
+                byte[] mp3 = mOpenAi.synthesizeSpeechMp3(speechText);
+                if (mp3.length == 0 || generation != mSpeechOutputGeneration || mStopped) {
+                    return;
+                }
+                playSpeechMp3(mp3, generation);
+            } catch (OpenAiResponsesProvider.OpenAiException e) {
+                Slog.w(TAG, "OpenAI speech output failed: " + e.getMessage());
+            } catch (IOException | RuntimeException e) {
+                Slog.w(TAG, "Speech output playback failed", e);
+            }
+        }, "HansSpeechOutput");
+        speechThread.start();
+    }
+
+    private void playSpeechMp3(byte[] mp3, int generation) throws IOException {
+        File cacheDir = getCacheDir() == null ? getFilesDir() : getCacheDir();
+        File speechFile = File.createTempFile("hans-speech-", ".mp3", cacheDir);
+        try (FileOutputStream output = new FileOutputStream(speechFile)) {
+            output.write(mp3);
+        }
+
+        MediaPlayer player = new MediaPlayer();
+        mSpeechPlayers.put(player, speechFile);
+        player.setOnCompletionListener(completed -> releaseSpeechPlayer(completed, false));
+        player.setOnErrorListener((failed, what, extra) -> {
+            Slog.w(TAG, "Speech MediaPlayer error what=" + what + " extra=" + extra);
+            releaseSpeechPlayer(failed, false);
+            return true;
+        });
+        try {
+            player.setAudioAttributes(new AudioAttributes.Builder()
+                    .setUsage(AudioAttributes.USAGE_ASSISTANT)
+                    .setContentType(AudioAttributes.CONTENT_TYPE_SPEECH)
+                    .build());
+            player.setDataSource(speechFile.getAbsolutePath());
+            player.prepare();
+            if (generation != mSpeechOutputGeneration || mStopped) {
+                releaseSpeechPlayer(player, false);
+                return;
+            }
+            Slog.i(TAG, "Playing Hans speech output: bytes=" + mp3.length);
+            player.start();
+        } catch (IOException e) {
+            releaseSpeechPlayer(player, false);
+            throw e;
+        } catch (RuntimeException e) {
+            releaseSpeechPlayer(player, false);
+            throw e;
+        }
+    }
+
+    private void stopAudioOutput() {
+        mSpeechOutputGeneration++;
+        for (MediaPlayer player : mSpeechPlayers.keySet()) {
+            releaseSpeechPlayer(player, true);
+        }
+    }
+
+    private void releaseSpeechPlayer(MediaPlayer player, boolean stop) {
+        File file = mSpeechPlayers.remove(player);
+        if (player != null) {
+            if (stop) {
+                try {
+                    player.stop();
+                } catch (IllegalStateException ignored) {
+                }
+            }
+            player.release();
+        }
+        if (file != null && file.exists() && !file.delete()) {
+            Slog.v(TAG, "Could not delete speech temp file " + file);
+        }
+    }
+
+    private boolean isAudioOutputEnabled() {
+        String value = SystemProperties.get(AUDIO_OUTPUT_ENABLED_PROP, "").trim();
+        if (value.isEmpty()) {
+            value = Settings.Global.getString(getContentResolver(), AUDIO_OUTPUT_ENABLED_SETTING);
+            value = value == null ? "" : value.trim();
+        }
+        if (value.isEmpty()) {
+            return true;
+        }
+        return !("0".equals(value)
+                || "false".equalsIgnoreCase(value)
+                || "off".equalsIgnoreCase(value));
     }
 
     private void emit(String requestId, IHansStreamCallback callback, String type, String message) {
