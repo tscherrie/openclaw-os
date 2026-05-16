@@ -41,6 +41,8 @@ public final class HansRuntimeService extends Service {
     private static final int MAX_VOICE_AUDIO_BYTES = VOICE_SAMPLE_RATE * 2 * 90;
     private static final int VOICE_PARTIAL_TRANSCRIPT_BYTES = VOICE_SAMPLE_RATE * 2 * 4;
     private static final String VOICE_PARTIALS_PROP = "persist.hansos.voice_partial_transcripts";
+    private static final int APP_PILOT_MAX_STEPS = 8;
+    private static final long APP_PILOT_TIMEOUT_MS = 12_000L;
 
     private HandlerThread mThread;
     private Handler mHandler;
@@ -128,6 +130,7 @@ public final class HansRuntimeService extends Service {
         mOpenAi = new OpenAiResponsesProvider(this);
         mSystemPhone = new SystemPhoneProvider(this);
         HansNotificationListenerService.ensureEnabled(this);
+        HansAppPilotAccessibilityService.ensureEnabled(this);
         mThread = new HandlerThread("HansRuntime");
         mThread.start();
         mHandler = new Handler(mThread.getLooper());
@@ -313,12 +316,25 @@ public final class HansRuntimeService extends Service {
     private void runAppControlFlow(String requestId, IHansStreamCallback callback) {
         emit(requestId, callback, HansEventTypes.APP_CONTROL_STARTED, "settings");
         emit(requestId, callback, HansEventTypes.PLAN, "Ich oeffne die Zieloberflaeche nur temporaer und kehre zur Canvas zurueck.");
-        emit(requestId, callback, HansEventTypes.APP_CONTROL_COMPLETED, shouldUseFakeContextProvider()
-                ? mAppControl.inspectNetworkSettings()
-                : mSystemPhone.inspectNetworkSettings());
-        emit(requestId, callback, HansEventTypes.AUDIT, shouldUseFakeContextProvider()
-                ? "app_control settings fixture inspected"
-                : "app_control system settings opened");
+        boolean fake = shouldUseFakeContextProvider();
+        if (fake) {
+            emit(requestId, callback, HansEventTypes.VISUAL_STARTED,
+                    "app_pilot fake fixture");
+            emit(requestId, callback, HansEventTypes.APP_CONTROL_COMPLETED,
+                    mAppControl.inspectNetworkSettings());
+            emit(requestId, callback, HansEventTypes.AUDIT,
+                    "app_control settings fixture inspected");
+        } else {
+            emit(requestId, callback, HansEventTypes.VISUAL_STARTED,
+                    "app_pilot settings allowlist active");
+            String result = HansAppPilotAccessibilityService.openSettingsAndInspectNetwork(
+                    this, mSystemPhone);
+            emit(requestId, callback, HansEventTypes.VISUAL_UPDATED, result);
+            emit(requestId, callback, HansEventTypes.APP_CONTROL_COMPLETED, result);
+            emit(requestId, callback, HansEventTypes.AUDIT,
+                    "app_pilot settings inspected; allowlist=com.android.settings; max_steps="
+                            + APP_PILOT_MAX_STEPS + "; timeout_ms=" + APP_PILOT_TIMEOUT_MS);
+        }
         speak(requestId, callback, "Netzwerkstatus gelesen. Zurueck zur Canvas.");
         emit(requestId, callback, HansEventTypes.DONE, "App-Control abgeschlossen.");
     }

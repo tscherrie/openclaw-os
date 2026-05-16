@@ -4,6 +4,7 @@ import android.content.Context;
 import android.os.IBinder;
 import android.os.RemoteException;
 import android.util.Slog;
+import android.os.SystemClock;
 
 import com.android.internal.util.DumpUtils;
 import com.android.server.SystemService;
@@ -29,12 +30,23 @@ import ai.hansos.agent.IHansStreamCallback;
 public final class HansManagerService extends SystemService {
     public static final String SERVICE_NAME = "hans";
     private static final String TAG = "HansManagerService";
+    private static final String VOICE_SESSION_BYTES_PREFIX = "voice_session bytes=";
 
     private final Object mLock = new Object();
     private final List<String> mAuditEvents = new ArrayList<>();
     private int mAgentState = HansAgentStates.STARTING;
     private IHansRuntime mRuntime;
     private IBinder mRuntimeBinder;
+    private int mLastInputKeyCode = -1;
+    private int mLastInputAction = -1;
+    private boolean mLastInputPttCandidate;
+    private long mLastInputUptimeMillis;
+    private String mLastVoiceSessionId = "";
+    private String mVoiceSessionState = "idle";
+    private int mLastVoiceBytes;
+    private String mLastTranscriptionStatus = "idle";
+    private String mLastVoiceEventType = "";
+    private long mLastVoiceEventUptimeMillis;
 
     private final IBinder.DeathRecipient mRuntimeDeathRecipient = () -> {
         synchronized (mLock) {
@@ -70,6 +82,11 @@ public final class HansManagerService extends SystemService {
         @Override
         public void cancelVoiceSession(String sessionId) {
             HansManagerService.this.cancelVoiceSession(sessionId);
+        }
+
+        @Override
+        public void reportInputEvent(int keyCode, int action, boolean pttCandidate) {
+            HansManagerService.this.reportInputEvent(keyCode, action, pttCandidate);
         }
 
         @Override
@@ -195,6 +212,10 @@ public final class HansManagerService extends SystemService {
         synchronized (mLock) {
             runtime = mRuntime;
             mAgentState = HansAgentStates.LISTENING;
+            mLastVoiceSessionId = requestId;
+            mVoiceSessionState = "starting";
+            mLastVoiceBytes = 0;
+            mLastTranscriptionStatus = "idle";
         }
 
         if (runtime == null) {
@@ -203,12 +224,17 @@ public final class HansManagerService extends SystemService {
             audit("voice_start_failed", "runtime missing", false);
             synchronized (mLock) {
                 mAgentState = HansAgentStates.ERROR;
+                mVoiceSessionState = "runtime_missing";
             }
             return requestId;
         }
 
         try {
             String runtimeSessionId = runtime.startVoiceSession(new ManagerStreamCallback(callback, "voice"));
+            synchronized (mLock) {
+                mLastVoiceSessionId = runtimeSessionId;
+                mVoiceSessionState = "recording";
+            }
             audit("voice_start", runtimeSessionId, true);
             return runtimeSessionId;
         } catch (RemoteException e) {
@@ -216,6 +242,7 @@ public final class HansManagerService extends SystemService {
             audit("voice_start_failed", e.toString(), false);
             synchronized (mLock) {
                 mAgentState = HansAgentStates.ERROR;
+                mVoiceSessionState = "start_failed";
             }
             return requestId;
         }
@@ -225,6 +252,11 @@ public final class HansManagerService extends SystemService {
         IHansRuntime runtime;
         synchronized (mLock) {
             runtime = mRuntime;
+            if (pcm16MonoChunk != null) {
+                mLastVoiceSessionId = sessionId == null ? "" : sessionId;
+                mLastVoiceBytes += pcm16MonoChunk.length;
+                mVoiceSessionState = "recording";
+            }
         }
         if (runtime == null) {
             audit("voice_audio_dropped", "runtime missing", false);
@@ -243,18 +275,30 @@ public final class HansManagerService extends SystemService {
         synchronized (mLock) {
             runtime = mRuntime;
             mAgentState = HansAgentStates.TRANSCRIBING;
+            mLastVoiceSessionId = sessionId == null ? "" : sessionId;
+            mVoiceSessionState = "finishing";
+            mLastTranscriptionStatus = "started";
         }
         if (runtime == null) {
             audit("voice_finish_failed", "runtime missing", false);
             setState(HansAgentStates.ERROR);
+            synchronized (mLock) {
+                mVoiceSessionState = "runtime_missing";
+            }
             return;
         }
         try {
             runtime.finishVoiceSession(sessionId);
+            synchronized (mLock) {
+                mVoiceSessionState = "transcribing";
+            }
             audit("voice_finish", sessionId, true);
         } catch (RemoteException e) {
             audit("voice_finish_failed", e.toString(), false);
             setState(HansAgentStates.ERROR);
+            synchronized (mLock) {
+                mVoiceSessionState = "finish_failed";
+            }
         }
     }
 
@@ -263,6 +307,8 @@ public final class HansManagerService extends SystemService {
         synchronized (mLock) {
             runtime = mRuntime;
             mAgentState = HansAgentStates.STOPPED;
+            mLastVoiceSessionId = sessionId == null ? "" : sessionId;
+            mVoiceSessionState = "cancelled";
         }
         if (runtime == null) {
             audit("voice_cancel", "runtime missing", false);
@@ -273,6 +319,18 @@ public final class HansManagerService extends SystemService {
             audit("voice_cancel", sessionId, true);
         } catch (RemoteException e) {
             audit("voice_cancel_failed", e.toString(), false);
+        }
+    }
+
+    private void reportInputEvent(int keyCode, int action, boolean pttCandidate) {
+        synchronized (mLock) {
+            mLastInputKeyCode = keyCode;
+            mLastInputAction = action;
+            mLastInputPttCandidate = pttCandidate;
+            mLastInputUptimeMillis = SystemClock.uptimeMillis();
+        }
+        if (pttCandidate) {
+            audit("ptt_input", "keyCode=" + keyCode + ", action=" + action, true);
         }
     }
 
@@ -332,6 +390,7 @@ public final class HansManagerService extends SystemService {
             }
             if ("voice".equals(args[0])) {
                 CapturingCallback callback = new CapturingCallback();
+                printVoiceState(pw);
                 String sessionId = startVoiceSession(callback);
                 finishVoiceSession(sessionId);
                 callback.awaitDone();
@@ -339,6 +398,16 @@ public final class HansManagerService extends SystemService {
                 for (String event : callback.events) {
                     pw.println(event);
                 }
+                printVoiceState(pw);
+                return;
+            }
+            if ("input".equals(args[0])) {
+                int keyCode = args.length > 1 ? parseInt(args[1], -1) : -1;
+                int action = args.length > 2 ? parseInt(args[2], -1) : -1;
+                boolean pttCandidate = args.length > 3 && Boolean.parseBoolean(args[3]);
+                reportInputEvent(keyCode, action, pttCandidate);
+                pw.println("input_reported");
+                printVoiceState(pw);
                 return;
             }
         }
@@ -352,8 +421,25 @@ public final class HansManagerService extends SystemService {
         pw.println("Commands:");
         pw.println("  dumpsys hans submit <text>");
         pw.println("  dumpsys hans voice");
+        pw.println("  dumpsys hans input <keyCode> <action> <pttCandidate>");
         pw.println("  dumpsys hans stop");
         pw.println("  dumpsys hans memory");
+    }
+
+    private void printVoiceState(PrintWriter pw) {
+        synchronized (mLock) {
+            pw.println("voiceDiagnostics");
+            pw.println("  last_input_keycode=" + mLastInputKeyCode);
+            pw.println("  last_input_action=" + mLastInputAction);
+            pw.println("  last_input_ptt_candidate=" + mLastInputPttCandidate);
+            pw.println("  last_input_uptime_ms=" + mLastInputUptimeMillis);
+            pw.println("  session_id=" + safe(mLastVoiceSessionId));
+            pw.println("  session_state=" + safe(mVoiceSessionState));
+            pw.println("  audio_bytes=" + mLastVoiceBytes);
+            pw.println("  transcription_status=" + safe(mLastTranscriptionStatus));
+            pw.println("  last_voice_event=" + safe(mLastVoiceEventType));
+            pw.println("  last_voice_event_uptime_ms=" + mLastVoiceEventUptimeMillis);
+        }
     }
 
     private void emergencyStop() {
@@ -403,24 +489,43 @@ public final class HansManagerService extends SystemService {
                 .replace("\t", "\\t");
     }
 
+    private static int parseInt(String value, int fallback) {
+        try {
+            return Integer.parseInt(value);
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
+    }
+
     private void handleRuntimeEvent(String eventJson) {
         try {
             JSONObject event = new JSONObject(eventJson);
             String type = event.optString("type", "");
             String message = event.optString("message", "");
+            synchronized (mLock) {
+                mLastVoiceEventType = type;
+                mLastVoiceEventUptimeMillis = SystemClock.uptimeMillis();
+            }
 
             if (HansEventTypes.LISTENING_STARTED.equals(type)) {
                 setState(HansAgentStates.LISTENING);
+                updateVoiceState("recording", "idle");
             } else if (HansEventTypes.LISTENING_FINISHED.equals(type)
-                    || HansEventTypes.TRANSCRIPT_PARTIAL.equals(type)
-                    || HansEventTypes.TRANSCRIPT_FINAL.equals(type)) {
+                    || HansEventTypes.TRANSCRIPT_PARTIAL.equals(type)) {
                 setState(HansAgentStates.TRANSCRIBING);
+                updateVoiceState("transcribing", HansEventTypes.TRANSCRIPT_PARTIAL.equals(type)
+                        ? "partial" : "started");
+            } else if (HansEventTypes.TRANSCRIPT_FINAL.equals(type)) {
+                setState(HansAgentStates.TRANSCRIBING);
+                updateVoiceState("transcribed", message.isEmpty() ? "final_empty" : "final_text");
             } else if (HansEventTypes.THINKING.equals(type) || HansEventTypes.PLAN.equals(type)) {
                 setState(HansAgentStates.THINKING);
             } else if (HansEventTypes.SPEAKING_STARTED.equals(type) || HansEventTypes.SPEECH.equals(type)) {
                 setState(HansAgentStates.SPEAKING);
+                updateVoiceState("responding", mLastTranscriptionStatus);
             } else if (HansEventTypes.SPEAKING_FINISHED.equals(type)) {
                 setState(HansAgentStates.IDLE);
+                updateVoiceState("idle", mLastTranscriptionStatus);
             } else if (HansEventTypes.ACTION_STARTED.equals(type)
                     || HansEventTypes.APP_CONTROL_STARTED.equals(type)) {
                 setState(HansAgentStates.ACTING);
@@ -429,12 +534,33 @@ public final class HansManagerService extends SystemService {
                 audit("runtime_done", message, true);
             } else if (HansEventTypes.ERROR.equals(type)) {
                 setState(HansAgentStates.ERROR);
+                updateVoiceState("error", "error");
                 audit("runtime_error", message, false);
             } else if (HansEventTypes.AUDIT.equals(type)) {
+                maybeRecordVoiceBytes(message);
                 audit("runtime_audit", message, true);
             }
         } catch (JSONException e) {
             audit("runtime_event_parse_failed", eventJson, false);
+        }
+    }
+
+    private void updateVoiceState(String sessionState, String transcriptionStatus) {
+        synchronized (mLock) {
+            mVoiceSessionState = sessionState;
+            mLastTranscriptionStatus = transcriptionStatus;
+        }
+    }
+
+    private void maybeRecordVoiceBytes(String message) {
+        if (message == null || !message.startsWith(VOICE_SESSION_BYTES_PREFIX)) {
+            return;
+        }
+        int bytes = parseInt(message.substring(VOICE_SESSION_BYTES_PREFIX.length()).trim(), -1);
+        if (bytes >= 0) {
+            synchronized (mLock) {
+                mLastVoiceBytes = bytes;
+            }
         }
     }
 

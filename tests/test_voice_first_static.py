@@ -16,6 +16,9 @@ def test_canvas_default_is_voice_first_surface() -> None:
     assert "appendVoiceAudio" in canvas
     assert "AudioRecord" in canvas
     assert "KEYCODE_ASSIST" in canvas
+    assert "KEYCODE_SYM" in canvas
+    assert "KEYCODE_PICTSYMBOLS" in canvas
+    assert "reportInputEvent" in canvas
     assert "new Button" not in canvas
     assert "EditText" not in canvas
 
@@ -28,6 +31,18 @@ def test_voice_contract_is_exposed_through_binder() -> None:
         assert "void appendVoiceAudio(String sessionId, in byte[] pcm16MonoChunk);" in contract
         assert "void finishVoiceSession(String sessionId);" in contract
         assert "void cancelVoiceSession(String sessionId);" in contract
+    assert "void reportInputEvent(int keyCode, int action, boolean pttCandidate);" in manager
+
+
+def test_manager_exposes_ptt_voice_diagnostics_without_audio_payload() -> None:
+    manager = read("aosp/frameworks/base/services/core/java/ai/hansos/server/HansManagerService.java")
+
+    assert "last_input_keycode" in manager
+    assert "last_input_ptt_candidate" in manager
+    assert "audio_bytes" in manager
+    assert "transcription_status" in manager
+    assert "dumpsys hans input <keyCode> <action> <pttCandidate>" in manager
+    assert "byte[] audio" not in manager
 
 
 def test_voice_events_and_states_are_declared() -> None:
@@ -53,10 +68,13 @@ def test_runtime_has_real_mp01_system_provider_and_fake_switch() -> None:
     provider = read("runtime/HansRuntimeService/src/main/java/ai/hansos/runtime/SystemPhoneProvider.java")
     listener = read("runtime/HansRuntimeService/src/main/java/ai/hansos/runtime/HansNotificationListenerService.java")
     manifest = read("runtime/HansRuntimeService/src/main/AndroidManifest.xml")
+    app_pilot = read("runtime/HansRuntimeService/src/main/java/ai/hansos/runtime/HansAppPilotAccessibilityService.java")
+    app_pilot_xml = read("runtime/HansRuntimeService/res/xml/hans_app_pilot_accessibility.xml")
 
     assert "persist.hansos.context_provider" in runtime
     assert "shouldUseFakeContextProvider" in runtime
     assert "SystemPhoneProvider" in runtime
+    assert "HansAppPilotAccessibilityService.ensureEnabled" in runtime
     assert "buildMorningBrief" in provider
     assert "CalendarContract.Instances" in provider
     assert "ConnectivityManager" in provider
@@ -64,7 +82,15 @@ def test_runtime_has_real_mp01_system_provider_and_fake_switch() -> None:
     assert "setInterruptionFilter" in provider
     assert "NotificationListenerService" in listener
     assert "BIND_NOTIFICATION_LISTENER_SERVICE" in manifest
+    assert "BIND_ACCESSIBILITY_SERVICE" in manifest
     assert "WRITE_SECURE_SETTINGS" in manifest
+    assert "AccessibilityService" in app_pilot
+    assert "openSettingsAndInspectNetwork" in app_pilot
+    assert "clickVisibleText" in app_pilot
+    assert "enterTextInFocusedField" in app_pilot
+    assert "performGlobalAction" in app_pilot
+    assert "canRetrieveWindowContent" in app_pilot_xml
+    assert "canPerformGestures" in app_pilot_xml
 
 
 def test_voice_audio_can_be_transcribed_through_byok_and_routed() -> None:
@@ -91,6 +117,8 @@ def test_sensitive_intents_require_manual_mode() -> None:
     assert "CONFIRMATION_REQUIRED" in runtime
     assert "MANUAL_MODE_REQUIRED" in runtime
     assert "unlock bootloader" in runtime
+    assert "APP_PILOT_MAX_STEPS" in runtime
+    assert "allowlist=com.android.settings" in runtime
 
 
 def test_release_scripts_verify_v1_voice_and_byok_artifacts() -> None:
@@ -104,7 +132,22 @@ def test_release_scripts_verify_v1_voice_and_byok_artifacts() -> None:
     assert "persist.hansos.openai_transcription_model" in byok
     assert "audio/transcriptions" in verify
     assert "SystemPhoneProvider" in verify
+    assert "HansAppPilotAccessibilityService" in verify
+    assert "last_input_keycode" in verify
+    assert "hansos_ptt_keycode" in verify
     assert "Hans live phrase" in verify
     assert "WRITE_SECURE_SETTINGS" in verify
     assert "MP01 side-button push-to-talk" in readme
     assert "Audio Transcriptions API" in openai
+
+
+def test_mp01_ptt_diagnose_script_exists() -> None:
+    script = read("scripts/mp01-ptt-diagnose.sh")
+    bridge = read("scripts/hans-input-bridge.sh")
+    smoke = read("scripts/smoke-mp01.sh")
+
+    assert "getevent -l -t" in script
+    assert "aw9523b-key.kl" in script
+    assert "dumpsys hans voice" in script
+    assert "ptt-sim" in bridge
+    assert "last_input_keycode=63" in smoke

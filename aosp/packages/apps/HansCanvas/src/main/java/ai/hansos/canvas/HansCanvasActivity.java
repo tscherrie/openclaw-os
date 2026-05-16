@@ -13,6 +13,9 @@ import android.os.Bundle;
 import android.os.RemoteException;
 import android.os.ServiceManager;
 import android.os.SystemProperties;
+import android.provider.Settings;
+import android.text.Layout;
+import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.ViewGroup;
@@ -41,6 +44,8 @@ public final class HansCanvasActivity extends Activity {
     private static final int AUDIO_PERMISSION_REQUEST = 10;
     private static final String PROVIDER_PROP = "persist.hansos.provider";
     private static final String PTT_KEY_PROP = "persist.hansos.ptt_keycode";
+    private static final String PTT_KEY_SETTING = "hansos_ptt_keycode";
+    private static final int KEYCODE_REFRESH = 285;
     private static final String ACTION_SUBMIT = "ai.hansos.canvas.action.SUBMIT";
     private static final String ACTION_QUICK = "ai.hansos.canvas.action.QUICK";
     private static final String ACTION_STOP = "ai.hansos.canvas.action.STOP";
@@ -92,7 +97,9 @@ public final class HansCanvasActivity extends Activity {
 
     @Override
     public boolean onKeyDown(int keyCode, KeyEvent event) {
-        if (isPushToTalkKey(keyCode)) {
+        boolean pttKey = isPushToTalkKey(keyCode);
+        reportInputEvent(keyCode, KeyEvent.ACTION_DOWN, pttKey);
+        if (pttKey) {
             if (event == null || event.getRepeatCount() == 0) {
                 startVoiceTurn();
             }
@@ -103,7 +110,9 @@ public final class HansCanvasActivity extends Activity {
 
     @Override
     public boolean onKeyUp(int keyCode, KeyEvent event) {
-        if (isPushToTalkKey(keyCode)) {
+        boolean pttKey = isPushToTalkKey(keyCode);
+        reportInputEvent(keyCode, KeyEvent.ACTION_UP, pttKey);
+        if (pttKey) {
             finishVoiceTurn();
             return true;
         }
@@ -150,6 +159,11 @@ public final class HansCanvasActivity extends Activity {
         mPhrase.setGravity(Gravity.CENTER);
         mPhrase.setIncludeFontPadding(false);
         mPhrase.setLineSpacing(0f, 1.08f);
+        mPhrase.setMaxLines(9);
+        mPhrase.setHorizontallyScrolling(false);
+        mPhrase.setBreakStrategy(Layout.BREAK_STRATEGY_HIGH_QUALITY);
+        mPhrase.setAutoSizeTextTypeUniformWithConfiguration(
+                18, 30, 1, TypedValue.COMPLEX_UNIT_SP);
         mPhrase.setText("");
         mPhrase.setContentDescription("Hans live phrase");
         root.addView(mPhrase, new LinearLayout.LayoutParams(
@@ -297,13 +311,43 @@ public final class HansCanvasActivity extends Activity {
     }
 
     private boolean isPushToTalkKey(int keyCode) {
-        int configured = SystemProperties.getInt(PTT_KEY_PROP, KeyEvent.KEYCODE_ASSIST);
+        int configured = configuredPushToTalkKey();
         return keyCode == configured
                 || keyCode == KeyEvent.KEYCODE_ASSIST
                 || keyCode == KeyEvent.KEYCODE_VOICE_ASSIST
                 || keyCode == KeyEvent.KEYCODE_CAMERA
                 || keyCode == KeyEvent.KEYCODE_HEADSETHOOK
-                || keyCode == KeyEvent.KEYCODE_BUTTON_1;
+                || keyCode == KeyEvent.KEYCODE_BUTTON_1
+                || keyCode == KeyEvent.KEYCODE_SYM
+                || keyCode == KeyEvent.KEYCODE_PICTSYMBOLS
+                || keyCode == KeyEvent.KEYCODE_PERIOD
+                || keyCode == KEYCODE_REFRESH;
+    }
+
+    private int configuredPushToTalkKey() {
+        int fromProp = SystemProperties.getInt(PTT_KEY_PROP, -1);
+        if (fromProp >= 0) {
+            return fromProp;
+        }
+        try {
+            return Settings.Global.getInt(getContentResolver(),
+                    PTT_KEY_SETTING, KeyEvent.KEYCODE_ASSIST);
+        } catch (SecurityException e) {
+            return KeyEvent.KEYCODE_ASSIST;
+        }
+    }
+
+    private void reportInputEvent(int keyCode, int action, boolean pttCandidate) {
+        if (mHans == null) {
+            bindHans();
+        }
+        if (mHans == null) {
+            return;
+        }
+        try {
+            mHans.reportInputEvent(keyCode, action, pttCandidate);
+        } catch (RemoteException ignored) {
+        }
     }
 
     private void handleDeveloperIntent(Intent intent) {

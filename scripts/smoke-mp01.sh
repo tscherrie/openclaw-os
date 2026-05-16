@@ -383,7 +383,11 @@ state="$(adb_cmd shell dumpsys hans 2>/dev/null | tr -d '\r')"
 assert_contains "${state}" "state=7" "emergency stop state"
 echo "  - emergency stop reaches STOPPED"
 
+adb_cmd shell dumpsys hans input 63 0 true >/dev/null
+adb_cmd shell dumpsys hans input 63 1 true >/dev/null
 voice="$(adb_cmd shell dumpsys hans voice 2>/dev/null | tr -d '\r')"
+assert_contains "${voice}" "last_input_keycode=63" "voice diagnostics"
+assert_contains "${voice}" "last_input_ptt_candidate=true" "voice diagnostics"
 assert_contains "${voice}" "listening_started" "voice smoke"
 assert_contains "${voice}" "speaking_started" "voice smoke"
 assert_contains "${voice}" "Voice turn abgeschlossen" "voice smoke"

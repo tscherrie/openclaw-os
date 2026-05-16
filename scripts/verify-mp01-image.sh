@@ -142,14 +142,19 @@ require_absent_path "${PRODUCT_OUT}/system_ext/priv-app/Provision" "Provision HO
 require_zip_entry "${SERVICES_JAR}" "classes.dex" "services dex payload"
 require_zip_dex_marker "${SERVICES_JAR}" "Lai/hansos/server/HansManagerService;" "HansManagerService dex marker"
 require_zip_dex_marker "${SERVICES_JAR}" "StartHansManagerService" "SystemServer Hans startup trace marker"
+require_zip_dex_marker "${SERVICES_JAR}" "last_input_keycode" "PTT diagnostics dex marker"
 require_zip_dex_marker "${SYSTEM_DIR}/priv-app/HansRuntimeServiceSystem/HansRuntimeServiceSystem.apk" \
   "Lai/hansos/runtime/SystemPhoneProvider;" "SystemPhoneProvider dex marker"
+require_zip_dex_marker "${SYSTEM_DIR}/priv-app/HansRuntimeServiceSystem/HansRuntimeServiceSystem.apk" \
+  "HansAppPilotAccessibilityService" "App Pilot accessibility dex marker"
 require_zip_dex_marker "${SYSTEM_DIR}/priv-app/HansRuntimeServiceSystem/HansRuntimeServiceSystem.apk" \
   "HansNotificationListenerService" "notification listener dex marker"
 require_zip_dex_marker "${SYSTEM_DIR}/priv-app/HansRuntimeServiceSystem/HansRuntimeServiceSystem.apk" \
   "audio/transcriptions" "OpenAI transcription dex marker"
 require_zip_dex_marker "${SYSTEM_DIR}/priv-app/HansCanvasSystem/HansCanvasSystem.apk" \
   "Hans live phrase" "voice-first Canvas dex marker"
+require_zip_dex_marker "${SYSTEM_DIR}/priv-app/HansCanvasSystem/HansCanvasSystem.apk" \
+  "hansos_ptt_keycode" "Canvas PTT setting dex marker"
 require_text_marker "${SYSTEM_DIR}/etc/permissions/privapp-permissions-ai.hansos.runtime.system.xml" \
   "WRITE_SECURE_SETTINGS" "runtime secure-settings permission"
 require_text_marker "${SYSTEM_DIR}/etc/permissions/privapp-permissions-ai.hansos.runtime.system.xml" \

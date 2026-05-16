@@ -97,6 +97,7 @@ commands:
   stop                     Trigger Emergency Stop
   retry                    Retry the last Canvas prompt
   voice                    Run a headless Voice Session smoke through dumpsys
+  ptt-sim <keycode>        Record a synthetic PTT diagnostic in dumpsys hans voice
   tap-desc <description>   Tap a UI node by content description
   tap-text <text>          Tap a UI node by visible text
   tap <x> <y>              Raw coordinate tap
@@ -212,6 +213,11 @@ developer_voice_smoke() {
   adb_cmd shell dumpsys hans voice | tr -d '\r'
 }
 
+developer_ptt_sim() {
+  adb_cmd shell dumpsys hans input "$1" 0 true | tr -d '\r'
+  adb_cmd shell dumpsys hans input "$1" 1 true | tr -d '\r'
+}
+
 dump_ui() {
   adb_cmd shell uiautomator dump /sdcard/hans-window.xml >/dev/null
   adb_cmd shell cat /sdcard/hans-window.xml | tr '>' '>\n' | tr -d '\r'
@@ -299,6 +305,13 @@ case "${command}" in
     ;;
   voice)
     developer_voice_smoke
+    ;;
+  ptt-sim)
+    if [[ $# -ne 1 ]]; then
+      echo "ptt-sim requires keycode" >&2
+      exit 2
+    fi
+    developer_ptt_sim "$1"
     ;;
   tap-desc)
     if [[ $# -lt 1 ]]; then

@@ -78,4 +78,5 @@ See:
 - `docs/ARCHITECTURE.md`
 - `docs/BUILD-PATH.md`
 - `docs/ALPHA-FLOWS.md`
+- `docs/MP01-HARDWARE-PTT-APP-PILOT.md`
 - `docs/SECURITY-MEMORY.md`
