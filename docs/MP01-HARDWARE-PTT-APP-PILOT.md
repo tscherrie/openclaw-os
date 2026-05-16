@@ -21,6 +21,9 @@ the current transcript, the current answer, and a compact status line.
 - HansCanvas reports all key down/up events to `HansManagerService`.
 - Push-to-talk candidates include Android assistant, voice assistant, camera,
   headset hook, button, symbol, picture symbol, period, and refresh-style keys.
+- On the physical MP01, the middle side button has been captured as
+  `/dev/input/event1` with Linux key code `00fc`, which Android delivers to
+  HansCanvas as `KEYCODE_REFRESH` / keycode `285`.
 - A device-specific key can be selected with the global setting
   `hansos_ptt_keycode`.
 - `dumpsys hans voice` reports the last input key, action, PTT-candidate flag,
@@ -59,9 +62,11 @@ Current required checks:
 - Button diagnosis:
   - `scripts/mp01-ptt-diagnose.sh --serial <serial> --duration 20`
 
-## Current Limit
+## Current Device State
 
-The Android KeyEvent PTT path is proven through HansCanvas and the full
-SystemServer/runtime path. The real physical side-button press still needs one
-live captured `getevent`/KeyEvent sample on the MP01 so that the final default
-keycode can be locked down without relying on the broader candidate list.
+- The physical side-button mapping is known and covered by the default
+  HansCanvas PTT candidate list.
+- The current MP01 dev device also has `hansos_ptt_keycode=285` set explicitly
+  as a global setting.
+- OpenAI BYOK is configured on the current MP01 dev device for direct WiFi
+  testing. The key itself is not stored in this repository.

@@ -18,6 +18,7 @@ def test_canvas_default_is_voice_first_surface() -> None:
     assert "KEYCODE_ASSIST" in canvas
     assert "KEYCODE_SYM" in canvas
     assert "KEYCODE_PICTSYMBOLS" in canvas
+    assert "KEYCODE_REFRESH = 285" in canvas
     assert "reportInputEvent" in canvas
     assert "new Button" not in canvas
     assert "EditText" not in canvas
