@@ -192,14 +192,16 @@ public final class HansRuntimeService extends Service {
         boolean explicitOpenAi = normalized.startsWith("ask openai");
         if (requiresManualMode(normalized)) {
             runManualModeRequiredFlow(requestId, prompt, callback);
+        } else if (explicitOpenAi) {
+            runOpenAiFlow(requestId, stripOpenAiPrefix(prompt, true), callback);
         } else if (isMorningIntent(normalized)) {
             runMorningFlow(requestId, callback);
         } else if (isAppControlIntent(normalized)) {
             runAppControlFlow(requestId, callback);
         } else if (isFocusIntent(normalized)) {
             runCommandActionFlow(requestId, prompt, callback);
-        } else if (explicitOpenAi || isOpenAiProviderActive()) {
-            runOpenAiFlow(requestId, stripOpenAiPrefix(prompt, explicitOpenAi), callback);
+        } else if (isOpenAiProviderActive()) {
+            runOpenAiFlow(requestId, prompt, callback);
         } else {
             runCommandActionFlow(requestId, prompt, callback);
         }
@@ -210,14 +212,27 @@ public final class HansRuntimeService extends Service {
     }
 
     private boolean isAppControlIntent(String normalized) {
-        return normalized.contains("settings")
+        return normalized.contains("open settings")
+                || normalized.contains("settings")
                 || normalized.contains("network")
-                || normalized.contains("app")
+                || normalized.contains("wifi")
+                || normalized.contains("wlan")
                 || normalized.contains("einstellung");
     }
 
     private boolean isFocusIntent(String normalized) {
-        return normalized.contains("focus") || normalized.contains("fokus");
+        return normalized.contains("focus mode")
+                || normalized.contains("fokus mode")
+                || normalized.contains("fokusmodus")
+                || normalized.contains("konzentrationsmodus")
+                || normalized.contains("do not disturb")
+                || normalized.contains("nicht stoeren")
+                || normalized.contains("turn on focus")
+                || normalized.contains("enable focus")
+                || normalized.contains("activate focus")
+                || normalized.contains("fokus aktiv")
+                || normalized.contains("fokus einschalten")
+                || normalized.contains("fokus starten");
     }
 
     private boolean requiresManualMode(String normalized) {

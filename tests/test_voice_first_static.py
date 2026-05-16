@@ -112,6 +112,18 @@ def test_voice_audio_can_be_transcribed_through_byok_and_routed() -> None:
     assert "multipart/form-data" in openai
 
 
+def test_voice_turns_prefer_openai_over_accidental_local_actions() -> None:
+    runtime = read("runtime/HansRuntimeService/src/main/java/ai/hansos/runtime/HansRuntimeService.java")
+    run_flow = runtime[runtime.index("private void runFlow"):runtime.index("private boolean isMorningIntent")]
+
+    assert run_flow.index("explicitOpenAi") < run_flow.index("isMorningIntent")
+    assert run_flow.index("isFocusIntent") < run_flow.index("isOpenAiProviderActive")
+    assert 'normalized.contains("app")' not in runtime
+    assert 'normalized.contains("focus") || normalized.contains("fokus")' not in runtime
+    assert 'normalized.contains("focus mode")' in runtime
+    assert 'normalized.contains("fokusmodus")' in runtime
+
+
 def test_sensitive_intents_require_manual_mode() -> None:
     runtime = read("runtime/HansRuntimeService/src/main/java/ai/hansos/runtime/HansRuntimeService.java")
     assert "requiresManualMode" in runtime
