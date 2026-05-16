@@ -10,8 +10,11 @@ import android.media.AudioFormat;
 import android.media.AudioRecord;
 import android.media.MediaRecorder;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.RemoteException;
 import android.os.ServiceManager;
+import android.os.SystemClock;
 import android.os.SystemProperties;
 import android.provider.Settings;
 import android.text.Layout;
@@ -19,6 +22,7 @@ import android.util.TypedValue;
 import android.view.Gravity;
 import android.view.KeyEvent;
 import android.view.ViewGroup;
+import android.view.WindowManager;
 import android.widget.LinearLayout;
 import android.widget.TextView;
 
@@ -45,7 +49,11 @@ public final class HansCanvasActivity extends Activity {
     private static final String PROVIDER_PROP = "persist.hansos.provider";
     private static final String PTT_KEY_PROP = "persist.hansos.ptt_keycode";
     private static final String PTT_KEY_SETTING = "hansos_ptt_keycode";
+    private static final String PTT_MIN_HOLD_MS_PROP = "persist.hansos.ptt_min_hold_ms";
+    private static final String PTT_MAX_HOLD_MS_PROP = "persist.hansos.ptt_max_hold_ms";
     private static final int KEYCODE_REFRESH = 285;
+    private static final int DEFAULT_PTT_MIN_HOLD_MS = 180;
+    private static final int DEFAULT_PTT_MAX_HOLD_MS = 45_000;
     private static final String ACTION_SUBMIT = "ai.hansos.canvas.action.SUBMIT";
     private static final String ACTION_QUICK = "ai.hansos.canvas.action.QUICK";
     private static final String ACTION_STOP = "ai.hansos.canvas.action.STOP";
@@ -63,6 +71,8 @@ public final class HansCanvasActivity extends Activity {
     private AudioRecord mRecorder;
     private Thread mAudioThread;
     private volatile boolean mRecording;
+    private long mVoiceStartUptimeMillis;
+    private final Handler mUiHandler = new Handler(Looper.getMainLooper());
     private StringBuilder mAgentSpeech = new StringBuilder();
     private String mActivePhraseOwner = "";
 
@@ -76,6 +86,7 @@ public final class HansCanvasActivity extends Activity {
     @Override
     protected void onCreate(Bundle bundle) {
         super.onCreate(bundle);
+        configureVoiceFirstWindow();
         bindHans();
         setContentView(buildUi());
         showIdle();
@@ -92,7 +103,16 @@ public final class HansCanvasActivity extends Activity {
     @Override
     protected void onDestroy() {
         stopAudioCapture(false);
+        mUiHandler.removeCallbacksAndMessages(null);
         super.onDestroy();
+    }
+
+    private void configureVoiceFirstWindow() {
+        setShowWhenLocked(true);
+        setTurnScreenOn(true);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON
+                | WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED
+                | WindowManager.LayoutParams.FLAG_TURN_SCREEN_ON);
     }
 
     @Override
@@ -216,14 +236,23 @@ public final class HansCanvasActivity extends Activity {
             showError("Voice start fehlgeschlagen.");
             return;
         }
+        mVoiceStartUptimeMillis = SystemClock.uptimeMillis();
         mAgentSpeech = new StringBuilder();
         mActivePhraseOwner = "user";
         updatePhrase("", "Listening", ACCENT, "Sprich. Loslassen sendet.");
         startAudioCapture();
+        scheduleVoiceTimeout(mVoiceSessionId);
     }
 
     private void finishVoiceTurn() {
         if (!mRecording && mVoiceSessionId == null) {
+            return;
+        }
+        mUiHandler.removeCallbacksAndMessages(null);
+        long heldMs = mVoiceStartUptimeMillis == 0
+                ? 0 : SystemClock.uptimeMillis() - mVoiceStartUptimeMillis;
+        if (heldMs > 0 && heldMs < configuredPushToTalkMinHoldMs()) {
+            cancelVoiceTurn("Zu kurz gehalten.");
             return;
         }
         String sessionId = mVoiceSessionId;
@@ -237,6 +266,29 @@ public final class HansCanvasActivity extends Activity {
             showError("Voice finish fehlgeschlagen.");
         }
         mVoiceSessionId = null;
+        mVoiceStartUptimeMillis = 0;
+    }
+
+    private void scheduleVoiceTimeout(String sessionId) {
+        int timeoutMs = configuredPushToTalkMaxHoldMs();
+        if (timeoutMs <= 0 || sessionId == null) {
+            return;
+        }
+        mUiHandler.postDelayed(() -> {
+            if (mRecording && sessionId.equals(mVoiceSessionId)) {
+                finishVoiceTurn();
+            }
+        }, timeoutMs);
+    }
+
+    private void cancelVoiceTurn(String status) {
+        String sessionId = mVoiceSessionId;
+        stopAudioCapture(true);
+        mVoiceSessionId = null;
+        mVoiceStartUptimeMillis = 0;
+        if (sessionId != null) {
+            showManualRequired(status);
+        }
     }
 
     private void startAudioCapture() {
@@ -337,6 +389,16 @@ public final class HansCanvasActivity extends Activity {
         }
     }
 
+    private int configuredPushToTalkMinHoldMs() {
+        return Math.max(0, SystemProperties.getInt(
+                PTT_MIN_HOLD_MS_PROP, DEFAULT_PTT_MIN_HOLD_MS));
+    }
+
+    private int configuredPushToTalkMaxHoldMs() {
+        return Math.max(0, SystemProperties.getInt(
+                PTT_MAX_HOLD_MS_PROP, DEFAULT_PTT_MAX_HOLD_MS));
+    }
+
     private void reportInputEvent(int keyCode, int action, boolean pttCandidate) {
         if (mHans == null) {
             bindHans();
@@ -410,6 +472,9 @@ public final class HansCanvasActivity extends Activity {
 
     private void emergencyStop() {
         stopAudioCapture(true);
+        mUiHandler.removeCallbacksAndMessages(null);
+        mVoiceSessionId = null;
+        mVoiceStartUptimeMillis = 0;
         if (mHans == null) {
             bindHans();
         }

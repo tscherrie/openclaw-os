@@ -11,6 +11,7 @@ import android.view.accessibility.AccessibilityNodeInfo;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
 
 public final class HansAppPilotAccessibilityService extends AccessibilityService {
     private static final String TAG = "HansAppPilot";
@@ -22,6 +23,11 @@ public final class HansAppPilotAccessibilityService extends AccessibilityService
             "ai.hansos.runtime",
             "com.android.settings",
             "com.android.systemui",
+            "com.android.deskclock",
+            "com.android.calculator2",
+            "com.google.android.calculator",
+            "com.android.calendar",
+            "com.android.contacts",
     };
 
     private static volatile HansAppPilotAccessibilityService sInstance;
@@ -81,6 +87,56 @@ public final class HansAppPilotAccessibilityService extends AccessibilityService
         return network + "; " + summary;
     }
 
+    static String runSafeCommand(Context context, SystemPhoneProvider phone, String prompt) {
+        ensureEnabled(context);
+        String normalized = prompt == null ? "" : prompt.toLowerCase();
+        if (normalized.contains("settings")
+                || normalized.contains("network")
+                || normalized.contains("wifi")
+                || normalized.contains("wlan")
+                || normalized.contains("einstellung")) {
+            return "app_pilot: action=settings_network; "
+                    + openSettingsAndInspectNetwork(context, phone);
+        }
+        if (normalized.contains("open clock")) {
+            return openSafePackage(context, "com.android.deskclock", "clock");
+        }
+        if (normalized.contains("open calculator")) {
+            String result = openSafePackage(context, "com.android.calculator2", "calculator");
+            if (result.contains("not_installed")) {
+                result = openSafePackage(context, "com.google.android.calculator", "calculator");
+            }
+            return result;
+        }
+        if (normalized.contains("go home") || "home".equals(normalized.trim())) {
+            boolean ok = performHome();
+            waitForScreen();
+            refreshActiveSummary();
+            return "app_pilot: action=home, success=" + ok + "; " + getLastSummary();
+        }
+        if (normalized.contains("go back") || "back".equals(normalized.trim())) {
+            boolean ok = performBack();
+            waitForScreen();
+            refreshActiveSummary();
+            return "app_pilot: action=back, success=" + ok + "; " + getLastSummary();
+        }
+        if (normalized.contains("scroll")) {
+            boolean ok = scrollForward();
+            waitForScreen();
+            refreshActiveSummary();
+            return "app_pilot: action=scroll_forward, success=" + ok + "; " + getLastSummary();
+        }
+        if (normalized.contains("click ")) {
+            String target = extractTargetAfter(prompt, "click");
+            boolean ok = clickVisibleText(target);
+            waitForScreen();
+            refreshActiveSummary();
+            return "app_pilot: action=click_text, target=" + sanitize(target)
+                    + ", success=" + ok + "; " + getLastSummary();
+        }
+        return observeCurrentScreen(context);
+    }
+
     static String observeCurrentScreen(Context context) {
         ensureEnabled(context);
         waitForScreen();
@@ -105,6 +161,9 @@ public final class HansAppPilotAccessibilityService extends AccessibilityService
     static boolean clickVisibleText(String text) {
         HansAppPilotAccessibilityService service = sInstance;
         if (service == null || text == null || text.isEmpty()) {
+            return false;
+        }
+        if (!service.isActiveWindowSafe()) {
             return false;
         }
         AccessibilityNodeInfo root = service.getRootInActiveWindow();
@@ -135,6 +194,9 @@ public final class HansAppPilotAccessibilityService extends AccessibilityService
         if (service == null) {
             return false;
         }
+        if (!service.isActiveWindowSafe()) {
+            return false;
+        }
         AccessibilityNodeInfo root = service.getRootInActiveWindow();
         try {
             AccessibilityNodeInfo focused = findFocusedEditable(root);
@@ -158,6 +220,9 @@ public final class HansAppPilotAccessibilityService extends AccessibilityService
     static boolean scrollForward() {
         HansAppPilotAccessibilityService service = sInstance;
         if (service == null) {
+            return false;
+        }
+        if (!service.isActiveWindowSafe()) {
             return false;
         }
         AccessibilityNodeInfo root = service.getRootInActiveWindow();
@@ -205,6 +270,44 @@ public final class HansAppPilotAccessibilityService extends AccessibilityService
             if (root != null) {
                 root.recycle();
             }
+        }
+    }
+
+    private boolean isActiveWindowSafe() {
+        AccessibilityNodeInfo root = getRootInActiveWindow();
+        try {
+            return root != null && isSafePackage(
+                    root.getPackageName() == null ? null : root.getPackageName().toString());
+        } finally {
+            if (root != null) {
+                root.recycle();
+            }
+        }
+    }
+
+    private static String openSafePackage(Context context, String packageName, String label) {
+        if (!isSafePackage(packageName)) {
+            return "app_pilot: action=open_app, target=" + sanitize(label)
+                    + ", success=false, blocked=allowlist";
+        }
+        PackageManager packageManager = context.getPackageManager();
+        Intent launch = packageManager.getLaunchIntentForPackage(packageName);
+        if (launch == null) {
+            return "app_pilot: action=open_app, target=" + sanitize(label)
+                    + ", package=" + sanitize(packageName)
+                    + ", success=false, reason=not_installed";
+        }
+        launch.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+        try {
+            context.startActivity(launch);
+            waitForScreen();
+            refreshActiveSummary();
+            return "app_pilot: action=open_app, target=" + sanitize(label)
+                    + ", package=" + sanitize(packageName)
+                    + ", success=true; " + getLastSummary();
+        } catch (RuntimeException e) {
+            return "app_pilot: action=open_app, target=" + sanitize(label)
+                    + ", success=false, error=" + sanitize(e.getClass().getSimpleName());
         }
     }
 
@@ -368,6 +471,25 @@ public final class HansAppPilotAccessibilityService extends AccessibilityService
             }
         }
         return false;
+    }
+
+    private static String extractTargetAfter(String prompt, String marker) {
+        if (prompt == null || marker == null) {
+            return "";
+        }
+        String trimmed = prompt.trim();
+        int quotedStart = trimmed.indexOf('"');
+        if (quotedStart >= 0) {
+            int quotedEnd = trimmed.indexOf('"', quotedStart + 1);
+            if (quotedEnd > quotedStart) {
+                return trimmed.substring(quotedStart + 1, quotedEnd).trim();
+            }
+        }
+        int index = trimmed.toLowerCase().indexOf(marker.toLowerCase());
+        if (index < 0) {
+            return "";
+        }
+        return trimmed.substring(index + marker.length()).trim();
     }
 
     private static void waitForScreen() {

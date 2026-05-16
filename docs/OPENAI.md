@@ -45,6 +45,23 @@ The voice transcription model property defaults to:
 gpt-4o-mini-transcribe
 ```
 
+The speech output path uses OpenAI Text-to-Speech by default on MP01:
+
+```text
+persist.hansos.openai_speech_model
+persist.hansos.openai_speech_voice
+persist.hansos.openai_speech_speed
+persist.hansos.openai_speech_instructions
+hansos_openai_speech_model
+hansos_openai_speech_voice
+hansos_openai_speech_speed
+hansos_openai_speech_instructions
+```
+
+Defaults are `gpt-4o-mini-tts`, `alloy`, speed `1.03`, and a concise
+handheld-agent speaking instruction. New PTT input interrupts any current speech
+playback before recording.
+
 Preferred local setup uses the helper script so the key is read from stdin and
 does not appear in shell history or process arguments:
 
@@ -132,8 +149,7 @@ adb shell cmd wifi start-scan
 
 On the physical MP01, keep OpenAI out of the deterministic pass/fail gate until
 the fake flows pass after a clean flash. Then configure the owner key through
-stdin, run one direct OpenAI prompt, clear the key chunks immediately, and rerun
-the fake provider path:
+stdin and run one direct OpenAI prompt:
 
 ```text
 cd /home/yearemias/hansos-overlay
@@ -147,16 +163,18 @@ ADB=/usr/bin/adb scripts/hans-openai-byok.sh \
   --prompt "HansOS MP01 hardware smoke. Answer with one short sentence." \
   test
 
-ADB=/usr/bin/adb scripts/hans-openai-byok.sh \
-  --serial MP0125031802636 \
-  clear
-
 ADB=/usr/bin/adb scripts/smoke-mp01.sh \
   --serial MP0125031802636 \
   --boot-timeout 900 \
   --include-degraded \
+  --include-openai-tts \
   --require-baked-home
 ```
+
+For Jeremias's current dev MP01, the OpenAI owner key intentionally remains on
+device between tests so physical PTT, STT, answer, and TTS can be exercised at
+any time. Only clear it when intentionally preparing a sanitized device or
+release demo.
 
 If the MP01 has no Android default network after a clean userdata wipe, use the
 host-side adb-reverse OpenAI proxy only for the manual OpenAI test:
@@ -172,7 +190,8 @@ printf '%s' "$OPENAI_API_KEY" | \
     configure
 ```
 
-Clear both the key and proxy immediately after the manual test:
+For disposable proxy tests, clear both the key and proxy immediately after the
+manual test:
 
 ```text
 ADB=/usr/bin/adb scripts/hans-openai-byok.sh --serial MP0125031802636 clear

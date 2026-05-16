@@ -42,6 +42,8 @@ final class OpenAiResponsesProvider {
     private static final String TRANSCRIPTION_MODEL_PROP = "persist.hansos.openai_transcription_model";
     private static final String SPEECH_MODEL_PROP = "persist.hansos.openai_speech_model";
     private static final String SPEECH_VOICE_PROP = "persist.hansos.openai_speech_voice";
+    private static final String SPEECH_SPEED_PROP = "persist.hansos.openai_speech_speed";
+    private static final String SPEECH_INSTRUCTIONS_PROP = "persist.hansos.openai_speech_instructions";
     private static final String BASE_URL_PROP = "persist.hansos.openai_base_url";
     private static final String KEY_SETTING = "hansos_openai_key";
     private static final String KEY_PART_COUNT_SETTING = "hansos_openai_key_parts";
@@ -51,11 +53,15 @@ final class OpenAiResponsesProvider {
     private static final String TRANSCRIPTION_MODEL_SETTING = "hansos_openai_transcription_model";
     private static final String SPEECH_MODEL_SETTING = "hansos_openai_speech_model";
     private static final String SPEECH_VOICE_SETTING = "hansos_openai_speech_voice";
+    private static final String SPEECH_SPEED_SETTING = "hansos_openai_speech_speed";
+    private static final String SPEECH_INSTRUCTIONS_SETTING = "hansos_openai_speech_instructions";
     private static final String BASE_URL_SETTING = "hansos_openai_base_url";
     private static final String DEFAULT_MODEL = "gpt-5.4-mini";
     private static final String DEFAULT_TRANSCRIPTION_MODEL = "gpt-4o-mini-transcribe";
     private static final String DEFAULT_SPEECH_MODEL = "gpt-4o-mini-tts";
     private static final String DEFAULT_SPEECH_VOICE = "alloy";
+    private static final String DEFAULT_SPEECH_INSTRUCTIONS =
+            "Speak warmly, clearly, and concisely like a helpful handheld voice agent. Use a calm natural pace.";
     private static final int MAX_SPEECH_AUDIO_BYTES = 6 * 1024 * 1024;
     private static final int MAX_KEY_PARTS = 8;
     private final ContentResolver mResolver;
@@ -115,6 +121,23 @@ final class OpenAiResponsesProvider {
         }
         voice = getGlobalString(SPEECH_VOICE_SETTING);
         return voice.isEmpty() ? DEFAULT_SPEECH_VOICE : voice;
+    }
+
+    float getSpeechSpeed() {
+        String speed = SystemProperties.get(SPEECH_SPEED_PROP, "").trim();
+        if (speed.isEmpty()) {
+            speed = getGlobalString(SPEECH_SPEED_SETTING);
+        }
+        return parseBoundedFloat(speed, 1.03f, 0.75f, 1.25f);
+    }
+
+    String getSpeechInstructions() {
+        String instructions = SystemProperties.get(SPEECH_INSTRUCTIONS_PROP, "").trim();
+        if (!instructions.isEmpty()) {
+            return instructions;
+        }
+        instructions = getGlobalString(SPEECH_INSTRUCTIONS_SETTING);
+        return instructions.isEmpty() ? DEFAULT_SPEECH_INSTRUCTIONS : instructions;
     }
 
     String transcribePcm16Mono(byte[] pcm16Mono, int sampleRate)
@@ -248,7 +271,7 @@ final class OpenAiResponsesProvider {
             payload.put("input", new JSONArray()
                     .put(new JSONObject()
                             .put("role", "system")
-                            .put("content", "You are Hans, the playful autonomous phone agent in HansOS. Be concise, action-oriented, and honest about system limits."))
+                            .put("content", "You are Hans, the playful autonomous phone agent in HansOS. This is a voice-first phone: default to one or two short spoken sentences, avoid lists unless asked, be action-oriented, and be honest about system limits."))
                     .put(new JSONObject()
                             .put("role", "user")
                             .put("content", userText == null ? "" : userText)));
@@ -265,6 +288,8 @@ final class OpenAiResponsesProvider {
             payload.put("voice", getSpeechVoice());
             payload.put("input", text);
             payload.put("response_format", "mp3");
+            payload.put("speed", getSpeechSpeed());
+            payload.put("instructions", getSpeechInstructions());
             return payload;
         } catch (JSONException e) {
             throw new IOException("Could not build OpenAI speech payload", e);
@@ -511,6 +536,24 @@ final class OpenAiResponsesProvider {
 
     private int getGlobalInt(String name, int defaultValue) {
         return Settings.Global.getInt(mResolver, name, defaultValue);
+    }
+
+    private static float parseBoundedFloat(String value, float fallback, float min, float max) {
+        if (value == null || value.trim().isEmpty()) {
+            return fallback;
+        }
+        try {
+            float parsed = Float.parseFloat(value.trim());
+            if (parsed < min) {
+                return min;
+            }
+            if (parsed > max) {
+                return max;
+            }
+            return parsed;
+        } catch (NumberFormatException e) {
+            return fallback;
+        }
     }
 
     private String readFirstLine(String path) {

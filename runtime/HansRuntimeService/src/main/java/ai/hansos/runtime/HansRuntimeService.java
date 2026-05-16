@@ -2,6 +2,7 @@ package ai.hansos.runtime;
 
 import android.app.Service;
 import android.os.Build;
+import android.content.Context;
 import android.content.Intent;
 import android.media.AudioAttributes;
 import android.media.MediaPlayer;
@@ -48,6 +49,14 @@ public final class HansRuntimeService extends Service {
     private static final String VOICE_PARTIALS_PROP = "persist.hansos.voice_partial_transcripts";
     private static final String AUDIO_OUTPUT_ENABLED_PROP = "persist.hansos.audio_output_enabled";
     private static final String AUDIO_OUTPUT_ENABLED_SETTING = "hansos_audio_output_enabled";
+    private static final String V1_DEVICE_POLICY_ENABLED_PROP =
+            "persist.hansos.v1_device_policy_enabled";
+    private static final String V1_DEVICE_POLICY_ENABLED_SETTING =
+            "hansos_v1_device_policy_enabled";
+    private static final String DEFAULT_PTT_KEY_SETTING = "hansos_ptt_keycode";
+    private static final String DEFAULT_SPEECH_MODEL_SETTING = "hansos_openai_speech_model";
+    private static final String DEFAULT_SPEECH_VOICE_SETTING = "hansos_openai_speech_voice";
+    private static final String DEFAULT_SPEECH_SPEED_SETTING = "hansos_openai_speech_speed";
     private static final int APP_PILOT_MAX_STEPS = 8;
     private static final long APP_PILOT_TIMEOUT_MS = 12_000L;
     private static final int MAX_SPEECH_TEXT_CHARS = 3500;
@@ -140,6 +149,7 @@ public final class HansRuntimeService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
+        applyV1DevicePolicy(this);
         mOpenAi = new OpenAiResponsesProvider(this);
         mSystemPhone = new SystemPhoneProvider(this);
         HansNotificationListenerService.ensureEnabled(this);
@@ -148,11 +158,16 @@ public final class HansRuntimeService extends Service {
         mThread.start();
         mHandler = new Handler(mThread.getLooper());
         registerWithManager();
+        mHandler.postDelayed(() -> launchCanvas(this), 1_200L);
     }
 
     @Override
     public int onStartCommand(Intent intent, int flags, int startId) {
+        applyV1DevicePolicy(this);
         registerWithManager();
+        if (mHandler != null) {
+            mHandler.postDelayed(() -> launchCanvas(this), 800L);
+        }
         return START_STICKY;
     }
 
@@ -200,6 +215,75 @@ public final class HansRuntimeService extends Service {
         }
     }
 
+    static void applyV1DevicePolicy(Context context) {
+        if (context == null || !isV1DevicePolicyEnabled(context)) {
+            return;
+        }
+        try {
+            Settings.Global.putInt(context.getContentResolver(), "device_provisioned", 1);
+            Settings.Secure.putInt(context.getContentResolver(), "user_setup_complete", 1);
+            Settings.Secure.putInt(context.getContentResolver(), "navigation_mode", 2);
+            Settings.Global.putString(context.getContentResolver(),
+                    "policy_control", "immersive.full=*");
+            Settings.Secure.putInt(context.getContentResolver(),
+                    "lock_screen_show_notifications", 0);
+            Settings.Secure.putInt(context.getContentResolver(),
+                    "lock_screen_allow_private_notifications", 0);
+            Settings.Secure.putInt(context.getContentResolver(),
+                    "lock_screen_show_only_unseen_notifications", 0);
+            Settings.Secure.putInt(context.getContentResolver(),
+                    "lockscreen_show_controls", 0);
+            Settings.Secure.putInt(context.getContentResolver(),
+                    "lockscreen_show_wallet", 0);
+            Settings.Secure.putInt(context.getContentResolver(),
+                    "power_menu_locked_show_content", 0);
+            putGlobalIfEmpty(context, DEFAULT_PTT_KEY_SETTING, "285");
+            putGlobalIfEmpty(context, AUDIO_OUTPUT_ENABLED_SETTING, "1");
+            putGlobalIfEmpty(context, DEFAULT_SPEECH_MODEL_SETTING, "gpt-4o-mini-tts");
+            putGlobalIfEmpty(context, DEFAULT_SPEECH_VOICE_SETTING, "alloy");
+            putGlobalIfEmpty(context, DEFAULT_SPEECH_SPEED_SETTING, "1.03");
+        } catch (RuntimeException e) {
+            Slog.w(TAG, "Could not apply HansOS v1 device policy", e);
+        }
+    }
+
+    static void launchCanvas(Context context) {
+        if (context == null) {
+            return;
+        }
+        try {
+            Intent home = new Intent(Intent.ACTION_MAIN);
+            home.addCategory(Intent.CATEGORY_HOME);
+            home.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK
+                    | Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED);
+            context.startActivity(home);
+        } catch (RuntimeException e) {
+            Slog.v(TAG, "Could not bring HansCanvas to foreground", e);
+        }
+    }
+
+    private static boolean isV1DevicePolicyEnabled(Context context) {
+        String value = SystemProperties.get(V1_DEVICE_POLICY_ENABLED_PROP, "").trim();
+        if (value.isEmpty()) {
+            value = Settings.Global.getString(
+                    context.getContentResolver(), V1_DEVICE_POLICY_ENABLED_SETTING);
+            value = value == null ? "" : value.trim();
+        }
+        if (value.isEmpty()) {
+            return true;
+        }
+        return !("0".equals(value)
+                || "false".equalsIgnoreCase(value)
+                || "off".equalsIgnoreCase(value));
+    }
+
+    private static void putGlobalIfEmpty(Context context, String key, String value) {
+        String existing = Settings.Global.getString(context.getContentResolver(), key);
+        if (existing == null || existing.trim().isEmpty() || "null".equals(existing.trim())) {
+            Settings.Global.putString(context.getContentResolver(), key, value);
+        }
+    }
+
     private void runFlow(String requestId, String text, IHansStreamCallback callback) {
         stopAudioOutput();
         String prompt = text == null ? "" : text.trim();
@@ -212,7 +296,7 @@ public final class HansRuntimeService extends Service {
         } else if (isMorningIntent(normalized)) {
             runMorningFlow(requestId, callback);
         } else if (isAppControlIntent(normalized)) {
-            runAppControlFlow(requestId, callback);
+            runAppControlFlow(requestId, prompt, callback);
         } else if (isFocusIntent(normalized)) {
             runCommandActionFlow(requestId, prompt, callback);
         } else if (isOpenAiProviderActive()) {
@@ -232,7 +316,18 @@ public final class HansRuntimeService extends Service {
                 || normalized.contains("network")
                 || normalized.contains("wifi")
                 || normalized.contains("wlan")
-                || normalized.contains("einstellung");
+                || normalized.contains("einstellung")
+                || normalized.contains("inspect screen")
+                || normalized.contains("observe screen")
+                || normalized.contains("current screen")
+                || normalized.contains("click ")
+                || normalized.contains("scroll")
+                || normalized.contains("go back")
+                || normalized.equals("back")
+                || normalized.contains("go home")
+                || normalized.equals("home")
+                || normalized.contains("open clock")
+                || normalized.contains("open calculator");
     }
 
     private boolean isFocusIntent(String normalized) {
@@ -343,8 +438,8 @@ public final class HansRuntimeService extends Service {
         emit(requestId, callback, HansEventTypes.DONE, "Morgen bereit. Ich bleibe im Hintergrund wach.");
     }
 
-    private void runAppControlFlow(String requestId, IHansStreamCallback callback) {
-        emit(requestId, callback, HansEventTypes.APP_CONTROL_STARTED, "settings");
+    private void runAppControlFlow(String requestId, String prompt, IHansStreamCallback callback) {
+        emit(requestId, callback, HansEventTypes.APP_CONTROL_STARTED, "app_pilot");
         emit(requestId, callback, HansEventTypes.PLAN, "Ich oeffne die Zieloberflaeche nur temporaer und kehre zur Canvas zurueck.");
         boolean fake = shouldUseFakeContextProvider();
         if (fake) {
@@ -356,16 +451,16 @@ public final class HansRuntimeService extends Service {
                     "app_control settings fixture inspected");
         } else {
             emit(requestId, callback, HansEventTypes.VISUAL_STARTED,
-                    "app_pilot settings allowlist active");
-            String result = HansAppPilotAccessibilityService.openSettingsAndInspectNetwork(
-                    this, mSystemPhone);
+                    "app_pilot allowlist active");
+            String result = HansAppPilotAccessibilityService.runSafeCommand(
+                    this, mSystemPhone, prompt);
             emit(requestId, callback, HansEventTypes.VISUAL_UPDATED, result);
             emit(requestId, callback, HansEventTypes.APP_CONTROL_COMPLETED, result);
             emit(requestId, callback, HansEventTypes.AUDIT,
                     "app_pilot settings inspected; allowlist=com.android.settings; max_steps="
                             + APP_PILOT_MAX_STEPS + "; timeout_ms=" + APP_PILOT_TIMEOUT_MS);
         }
-        speak(requestId, callback, "Netzwerkstatus gelesen. Zurueck zur Canvas.");
+        speak(requestId, callback, "Erledigt. App-Steuerung abgeschlossen.");
         emit(requestId, callback, HansEventTypes.DONE, "App-Control abgeschlossen.");
     }
 

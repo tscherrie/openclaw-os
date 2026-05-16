@@ -48,7 +48,8 @@ resolve_adb() {
 usage() {
   cat <<'USAGE'
 usage: smoke-mp01.sh [--serial SERIAL] [--boot-timeout SECONDS]
-                    [--include-degraded] [--require-baked-home] [--verbose]
+                    [--include-degraded] [--include-openai-tts]
+                    [--require-baked-home] [--verbose]
 
 Post-flash HansOS smoke test for the Minimal Phone MP01.
 It expects the device to be booted and authorized over adb.
@@ -61,7 +62,9 @@ ADB_CALL_TIMEOUT="${HANSOS_ADB_TIMEOUT_SECONDS:-25}"
 ADB_WAIT_TIMEOUT="${HANSOS_ADB_WAIT_TIMEOUT_SECONDS:-180}"
 BOOT_TIMEOUT="${HANSOS_MP01_BOOT_TIMEOUT_SECONDS:-600}"
 INCLUDE_DEGRADED="${HANSOS_SMOKE_INCLUDE_DEGRADED:-false}"
+INCLUDE_OPENAI_TTS="${HANSOS_SMOKE_INCLUDE_OPENAI_TTS:-false}"
 REQUIRE_BAKED_HOME="${HANSOS_MP01_REQUIRE_BAKED_HOME:-false}"
+PTT_KEYCODE="${HANSOS_MP01_PTT_KEYCODE:-285}"
 VERBOSE="${HANSOS_SMOKE_VERBOSE:-false}"
 RUNTIME_DISABLED=false
 
@@ -73,6 +76,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --include-degraded)
       INCLUDE_DEGRADED=true
+      shift
+      ;;
+    --include-openai-tts)
+      INCLUDE_OPENAI_TTS=true
       shift
       ;;
     --require-baked-home)
@@ -184,6 +191,69 @@ assert_contains() {
     echo "${output}" >&2
     exit 1
   fi
+}
+
+assert_equals() {
+  local actual="$1"
+  local expected="$2"
+  local label="$3"
+  if [[ "${actual}" != "${expected}" ]]; then
+    echo "Expected ${label} to equal '${expected}', got '${actual}'" >&2
+    exit 1
+  fi
+}
+
+package_exists() {
+  local package="$1"
+  local output
+  output="$(adb_cmd shell pm path "${package}" 2>/dev/null | tr -d '\r' || true)"
+  [[ "${output}" == package:* ]]
+}
+
+check_v1_device_policy() {
+  echo "HansOS MP01 v1 device policy:"
+
+  local navigation_mode
+  local policy_control
+  local show_notifications
+  local private_notifications
+  local controls
+  navigation_mode="$(adb_cmd shell settings get secure navigation_mode 2>/dev/null | tr -d '\r' || true)"
+  policy_control="$(adb_cmd shell settings get global policy_control 2>/dev/null | tr -d '\r' || true)"
+  show_notifications="$(adb_cmd shell settings get secure lock_screen_show_notifications 2>/dev/null | tr -d '\r' || true)"
+  private_notifications="$(adb_cmd shell settings get secure lock_screen_allow_private_notifications 2>/dev/null | tr -d '\r' || true)"
+  controls="$(adb_cmd shell settings get secure lockscreen_show_controls 2>/dev/null | tr -d '\r' || true)"
+
+  assert_equals "${navigation_mode}" "2" "gesture navigation mode"
+  assert_contains "${policy_control}" "immersive.full=*" "immersive policy"
+  assert_equals "${show_notifications}" "0" "lockscreen notification visibility"
+  assert_equals "${private_notifications}" "0" "private lockscreen notifications"
+  assert_equals "${controls}" "0" "lockscreen controls"
+  echo "  - gesture navigation, immersive canvas, and lockscreen minimalization active"
+}
+
+test_openai_tts() {
+  echo "HansOS MP01 OpenAI speech output:"
+
+  adb_cmd shell settings put global hansos_provider openai >/dev/null 2>&1 || true
+  adb_cmd shell settings put global hansos_audio_output_enabled 1 >/dev/null 2>&1 || true
+  adb_cmd shell settings put global hansos_openai_speech_model gpt-4o-mini-tts >/dev/null 2>&1 || true
+  adb_cmd shell settings put global hansos_openai_speech_voice alloy >/dev/null 2>&1 || true
+  adb_cmd shell settings put global hansos_openai_speech_speed 1.03 >/dev/null 2>&1 || true
+  adb_cmd shell logcat -c >/dev/null 2>&1 || true
+  adb_cmd shell cmd audio set-volume music 7 >/dev/null 2>&1 || true
+  adb_cmd shell am startservice -n ai.hansos.runtime/.HansRuntimeService >/dev/null 2>&1 || true
+  wait_runtime 45
+
+  local output
+  output="$(adb_cmd shell dumpsys hans submit "ask openai Say exactly: HansOS v1 audio OK." 2>/dev/null | tr -d '\r')"
+  assert_contains "${output}" "requestId=" "OpenAI TTS request"
+  sleep 20
+
+  local audio_log
+  audio_log="$(adb_cmd shell logcat -d -t 2000 2>/dev/null | tr -d '\r' | grep -E "Playing Hans speech output|AudioTrack|NuPlayer|OpenAI speech output failed" || true)"
+  assert_contains "${audio_log}" "Playing Hans speech output" "OpenAI TTS log"
+  echo "  - OpenAI TTS generated and playback started"
 }
 
 wait_runtime() {
@@ -327,6 +397,7 @@ adb_cmd shell am start -n ai.hansos.canvas/.HansCanvasActivity >/dev/null
 wait_runtime 45
 
 ensure_canvas_home
+check_v1_device_policy
 
 echo "HansOS MP01 fake flows:"
 run_flow "Command -> Action flow" \
@@ -373,6 +444,34 @@ run_flow "Real App Control flow" \
   "settings.network:" \
   "\"type\":\"done\""
 
+run_flow "Real App Pilot observe flow" \
+  "inspect current screen" \
+  "\"type\":\"app_control_completed\"" \
+  "app_pilot:" \
+  "\"type\":\"done\""
+
+run_flow "Real App Pilot home flow" \
+  "go home" \
+  "\"type\":\"app_control_completed\"" \
+  "action=home" \
+  "\"type\":\"done\""
+
+if package_exists com.android.deskclock; then
+  run_flow "Real App Pilot clock flow" \
+    "open clock" \
+    "\"type\":\"app_control_completed\"" \
+    "package=com.android.deskclock" \
+    "\"type\":\"done\""
+elif package_exists com.android.calculator2; then
+  run_flow "Real App Pilot calculator flow" \
+    "open calculator" \
+    "\"type\":\"app_control_completed\"" \
+    "package=com.android.calculator2" \
+    "\"type\":\"done\""
+else
+  echo "  - optional app-pilot package launch skipped: no clock/calculator package found"
+fi
+
 clear_context_provider
 
 memory="$(adb_cmd shell dumpsys hans memory 2>/dev/null | tr -d '\r')"
@@ -383,10 +482,10 @@ state="$(adb_cmd shell dumpsys hans 2>/dev/null | tr -d '\r')"
 assert_contains "${state}" "state=7" "emergency stop state"
 echo "  - emergency stop reaches STOPPED"
 
-adb_cmd shell dumpsys hans input 63 0 true >/dev/null
-adb_cmd shell dumpsys hans input 63 1 true >/dev/null
+adb_cmd shell dumpsys hans input "${PTT_KEYCODE}" 0 true >/dev/null
+adb_cmd shell dumpsys hans input "${PTT_KEYCODE}" 1 true >/dev/null
 voice="$(adb_cmd shell dumpsys hans voice 2>/dev/null | tr -d '\r')"
-assert_contains "${voice}" "last_input_keycode=63" "voice diagnostics"
+assert_contains "${voice}" "last_input_keycode=${PTT_KEYCODE}" "voice diagnostics"
 assert_contains "${voice}" "last_input_ptt_candidate=true" "voice diagnostics"
 assert_contains "${voice}" "listening_started" "voice smoke"
 assert_contains "${voice}" "speaking_started" "voice smoke"
@@ -397,10 +496,15 @@ if [[ "${INCLUDE_DEGRADED}" == "true" ]]; then
   test_degraded_runtime_missing
 fi
 
+if [[ "${INCLUDE_OPENAI_TTS}" == "true" ]]; then
+  test_openai_tts
+fi
+
 echo "HansOS MP01 smoke passed:"
 echo "  - serial ${SERIAL}"
 echo "  - boot completed"
 echo "  - binder service hans present"
 echo "  - runtime registered"
 echo "  - canvas is HOME"
+echo "  - v1 device policy passed"
 echo "  - fake alpha flows passed"

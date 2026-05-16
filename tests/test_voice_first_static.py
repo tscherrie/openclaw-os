@@ -19,6 +19,13 @@ def test_canvas_default_is_voice_first_surface() -> None:
     assert "KEYCODE_SYM" in canvas
     assert "KEYCODE_PICTSYMBOLS" in canvas
     assert "KEYCODE_REFRESH = 285" in canvas
+    assert "setShowWhenLocked(true)" in canvas
+    assert "setTurnScreenOn(true)" in canvas
+    assert "FLAG_KEEP_SCREEN_ON" in canvas
+    assert "persist.hansos.ptt_min_hold_ms" in canvas
+    assert "persist.hansos.ptt_max_hold_ms" in canvas
+    assert "scheduleVoiceTimeout" in canvas
+    assert "cancelVoiceTurn(\"Zu kurz gehalten.\")" in canvas
     assert "reportInputEvent" in canvas
     assert "new Button" not in canvas
     assert "EditText" not in canvas
@@ -90,6 +97,12 @@ def test_runtime_has_real_mp01_system_provider_and_fake_switch() -> None:
     assert "shouldUseFakeContextProvider" in runtime
     assert "SystemPhoneProvider" in runtime
     assert "HansAppPilotAccessibilityService.ensureEnabled" in runtime
+    assert "applyV1DevicePolicy" in runtime
+    assert "navigation_mode" in runtime
+    assert "policy_control" in runtime
+    assert "lock_screen_show_notifications" in runtime
+    assert "hansos_ptt_keycode" in runtime
+    assert "launchCanvas" in runtime
     assert "buildMorningBrief" in provider
     assert "CalendarContract.Instances" in provider
     assert "ConnectivityManager" in provider
@@ -100,6 +113,11 @@ def test_runtime_has_real_mp01_system_provider_and_fake_switch() -> None:
     assert "BIND_ACCESSIBILITY_SERVICE" in manifest
     assert "WRITE_SECURE_SETTINGS" in manifest
     assert "AccessibilityService" in app_pilot
+    assert "runSafeCommand" in app_pilot
+    assert "openSafePackage" in app_pilot
+    assert "com.android.deskclock" in app_pilot
+    assert "com.android.calculator2" in app_pilot
+    assert "isActiveWindowSafe" in app_pilot
     assert "openSettingsAndInspectNetwork" in app_pilot
     assert "clickVisibleText" in app_pilot
     assert "enterTextInFocusedField" in app_pilot
@@ -142,8 +160,12 @@ def test_agent_answers_can_be_spoken_on_device_without_android_tts_engine() -> N
     assert "synthesizeSpeechMp3" in openai
     assert "persist.hansos.openai_speech_model" in openai
     assert "persist.hansos.openai_speech_voice" in openai
+    assert "persist.hansos.openai_speech_speed" in openai
+    assert "persist.hansos.openai_speech_instructions" in openai
     assert "gpt-4o-mini-tts" in openai
     assert "response_format" in openai
+    assert "payload.put(\"speed\"" in openai
+    assert "payload.put(\"instructions\"" in openai
 
 
 def test_voice_turns_prefer_openai_over_accidental_local_actions() -> None:
@@ -197,4 +219,8 @@ def test_mp01_ptt_diagnose_script_exists() -> None:
     assert "aw9523b-key.kl" in script
     assert "dumpsys hans voice" in script
     assert "ptt-sim" in bridge
-    assert "last_input_keycode=63" in smoke
+    assert "HANSOS_MP01_PTT_KEYCODE" in smoke
+    assert "last_input_keycode=${PTT_KEYCODE}" in smoke
+    assert "--include-openai-tts" in smoke
+    assert "check_v1_device_policy" in smoke
+    assert "Playing Hans speech output" in smoke

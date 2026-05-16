@@ -38,6 +38,14 @@ the current transcript, the current answer, and a compact status line.
 - HansRuntimeService always owns speech output through OpenAI `audio/speech` and
   plays the result locally. HansCanvas remains display-only so the voice quality
   is consistent across images and devices.
+- HansCanvas requests show-when-locked, turn-screen-on, and keep-screen-on so the
+  black status surface can behave like a minimal lockscreen-adjacent appliance.
+- PTT can be tuned with `persist.hansos.ptt_min_hold_ms` and
+  `persist.hansos.ptt_max_hold_ms`. Very short accidental taps cancel, while
+  over-long holds auto-finish instead of hanging the audio session.
+- HansRuntimeService applies the v1 device policy on boot: gesture navigation,
+  immersive fullscreen, hidden lockscreen notifications, hidden lockscreen
+  controls, default MP01 PTT keycode, and default OpenAI speech settings.
 
 ## App Pilot
 
@@ -46,10 +54,14 @@ small and auditable:
 
 - Observe active package/class, visible text, node count, and event reason.
 - Open Settings and inspect network state.
-- Perform safe navigation actions such as Back/Home, click visible text, scroll,
-  and enter text into a focused field.
+- Perform safe navigation actions such as Back/Home, open safe apps, click
+  visible text, scroll, and enter text into a focused field.
 - Enforce an allowlist, step limit, timeout, and audit marker before expanding
   beyond harmless navigation.
+
+Current generic commands include observing the current screen, opening Settings
+network, Home, Back, Scroll, clicking visible text, and launching harmless
+stock apps such as Clock or Calculator when available.
 
 Sensitive operations such as calls, SMS, deleting data, sending purchases,
 logins, PIN/password entry, and flashing remain manual-mode operations.
@@ -63,7 +75,7 @@ Current required checks:
 - MP01 image marker verification:
   - `scripts/verify-mp01-image.sh --product-out <tdgsi_arm64_ab product out>`
 - Physical MP01 smoke:
-  - `scripts/smoke-mp01.sh --serial <serial> --include-degraded --require-baked-home`
+  - `scripts/smoke-mp01.sh --serial <serial> --include-degraded --include-openai-tts --require-baked-home`
 - Button diagnosis:
   - `scripts/mp01-ptt-diagnose.sh --serial <serial> --duration 20`
 
